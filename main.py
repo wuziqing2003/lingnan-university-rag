@@ -1,11 +1,14 @@
+from pathlib import Path
 import streamlit as st
-import os
+
 from openai import OpenAI
+import logging
 from datetime import datetime
+from config import DEEPSEEK_API_KEY
 
 
 client = OpenAI(
-    api_key=st.secrets["DEEPSEEK_API_KEY"],
+    api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com")
 system_prompt = '''你是岭南师范学院专属官方RAG智能咨询助手，依托岭南师范学院官方公开文件、学生管理规定、教务管理办法、招生章程、就业政策、后勤管理条例、各院系官方公告等权威数据库为用户提供咨询服务。
 
@@ -30,7 +33,10 @@ st.header(
     width="content",         # 宽度跟随内容，不撑满全行
     divider="gray"           # 分割线颜色
 )
-st.logo("data/school_badge.jpg",  size="large", )
+if Path("data/school_badge.jpg").exists():
+    st.logo("data/school_badge.jpg",  size="large", )
+else:
+    logging.warning("学校徽标文件不存在，请检查文件路径:data/school_badge.jpg。")
 ### 侧边栏
 with st.sidebar:
     st.title("岭南师范学院")
@@ -44,28 +50,34 @@ if 'messages' not in st.session_state:
 for message in st.session_state.messages:
     st.chat_message(message["role"]).write(message["content"])
 prompt = st.chat_input("请输入你的问题：")
+
 if prompt:
+    logging.info("用户提问: %s", prompt[:50])
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role":"user", "content":prompt})
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-v4-pro",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                *st.session_state.messages
+            ],
+            stream=True,
 
-    response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            *st.session_state.messages
-        ],
-        stream=True,
-
-    )
+        )
 
 
-    empty_container = st.empty()
-    empty_str = ""
-    for chunk in response:
-        if chunk.choices[0].delta.content is not None:
-            empty_str += chunk.choices[0].delta.content
-            empty_container.chat_message("assistant").write(empty_str)
-    st.session_state.messages.append({"role":"assistant", "content":empty_str})
+        empty_container = st.empty()
+        empty_str = ""
+        for chunk in response:
+            if chunk.choices[0].delta.content is not None:
+                empty_str += chunk.choices[0].delta.content
+                empty_container.chat_message("assistant").write(empty_str)
+        st.session_state.messages.append({"role":"assistant", "content":empty_str})
+        logging.info("回答内容: %s", empty_str[:50])
+    except Exception as e:
+        logging.exception("DeepSeek API 调用失败")  # 记录完整堆栈
+        st.error("服务暂时不可用，请稍后重试。") 
 
 
 

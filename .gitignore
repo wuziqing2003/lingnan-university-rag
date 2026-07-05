@@ -1,3 +1,5 @@
 .idea/
 __pycache__/
-.streamlit/
+.env
+.venv/
+.cursor/
