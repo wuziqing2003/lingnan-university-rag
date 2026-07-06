@@ -65,16 +65,26 @@ if prompt:
             stream=True,
 
         )
+        ## 生成回答内容
+        def response_generator():
+            for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+        ##在屏幕上流式显示回答内容，且标记为机器人
+
+                # ... existing code ...
+                ##在屏幕上流式显示回答内容，且标记为机器人
+        with st.chat_message("assistant"):
+            full_response = st.write_stream(response_generator())
+
+        if not full_response:
+            full_response = ""
 
 
-        empty_container = st.empty()
-        empty_str = ""
-        for chunk in response:
-            if chunk.choices[0].delta.content is not None:
-                empty_str += chunk.choices[0].delta.content
-                empty_container.chat_message("assistant").write(empty_str)
-        st.session_state.messages.append({"role":"assistant", "content":empty_str})
-        logging.info("回答内容: %s", empty_str[:50])
+        # ... existing code ...
+
+        st.session_state.messages.append({"role":"assistant", "content":full_response})
+        logging.info("回答内容: %s", full_response[:50])
     except Exception as e:
         logging.exception("DeepSeek API 调用失败")  # 记录完整堆栈
         st.error("服务暂时不可用，请稍后重试。") 
