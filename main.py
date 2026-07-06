@@ -1,15 +1,34 @@
 from pathlib import Path
 import streamlit as st
-
+import time
 from openai import OpenAI
 import logging
 from datetime import datetime
 from config import DEEPSEEK_API_KEY
-
-
 client = OpenAI(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com")
+def time_data():
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+##定义一个计时装置
+def decorator(func):
+    def wrapper(*args,**kwargs):
+        start_time = time.time()
+        result = func(*args,**kwargs)
+        end_time = time.time()
+        logging.info(f"{func.__name__} took {end_time - start_time}s")
+        return result
+    return wrapper
+@decorator
+def ai_response(messages):
+    response = client.chat.completions.create(
+        model="deepseek-v4-pro",
+        messages=messages,
+        stream=True,
+
+    )
+    return response
+
 system_prompt = '''你是岭南师范学院专属官方RAG智能咨询助手，依托岭南师范学院官方公开文件、学生管理规定、教务管理办法、招生章程、就业政策、后勤管理条例、各院系官方公告等权威数据库为用户提供咨询服务。
 
 核心工作准则：
@@ -42,8 +61,9 @@ with st.sidebar:
     st.title("岭南师范学院")
     st.caption("教务智能体系统 v1.0")
     st.divider()
-def time_data():
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+
 ### 初始化会话状态messages
 if 'messages' not in st.session_state:
     st.session_state.messages = []
@@ -56,15 +76,10 @@ if prompt:
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role":"user", "content":prompt})
     try:
-        response = client.chat.completions.create(
-            model="deepseek-v4-pro",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *st.session_state.messages
-            ],
-            stream=True,
-
-        )
+        response = ai_response([
+            {"role": "system", "content": system_prompt},
+            *st.session_state.messages
+        ])
         ## 生成回答内容
         def response_generator():
             for chunk in response:
