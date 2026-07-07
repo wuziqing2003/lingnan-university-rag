@@ -16,5 +16,5 @@ if not DEEPSEEK_API_KEY:
     logging.error("Config load failed! DEEPSEEK_API_KEY is missing.") # 如果失败，打印红字 ERROR 级别
     raise ValueError("API Key 缺失")
 
-# 3. 成功后触发工业级标准日志
+# 3. 成功后触发工业级标准日志记录
 logging.info("Config loaded successfully.")
