@@ -80,7 +80,7 @@ if prompt:
             {"role": "system", "content": system_prompt},
             *st.session_state.messages
         ])
-        ## 生成回答内容
+        ## 生成回答内容流式输出
         def response_generator():
             for chunk in response:
                 if chunk.choices[0].delta.content is not None:
