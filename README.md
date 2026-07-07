@@ -22,4 +22,4 @@
 ```bash
 git clone [https://github.com/你的GitHub用户名/lingnan-university-rag.git](https://github.com/你的GitHub用户名/lingnan-university-rag.git)
 cd lingnan-university-rag
-
+image.png
