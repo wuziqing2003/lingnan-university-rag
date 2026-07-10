@@ -17,4 +17,14 @@ if not DEEPSEEK_API_KEY:
     raise ValueError("API Key 缺失")
 
 # 3. 成功后触发工业级标准日志记录
-logging.info("Config loaded successfully.")
+logging.info("Config loaded successfully.") 
+
+
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+
+SQLALCHEMY_DATABASE_URL = (f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4")
+logging.info(f"config database successfully: {SQLALCHEMY_DATABASE_URL}")
