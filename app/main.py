@@ -36,7 +36,9 @@ async def database_exception_handler(request:Request,exc:OperationalError):
         }
 
     )
-
+@app.get("/health")
+async def health():
+    return {"status":"ok"}
 
 
 

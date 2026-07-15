@@ -22,4 +22,9 @@
 ```bash
 git clone [https://github.com/你的GitHub用户名/lingnan-university-rag.git](https://github.com/你的GitHub用户名/lingnan-university-rag.git)
 cd lingnan-university-rag
-image.png
+
+
+![Swagger API Docs](./swagger-docs.png)
+## 🛠️ 后端核心架构：用户请求完整生命周期流转图
+
+![后端核心架构图](image/architecture.png)
