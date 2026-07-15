@@ -37,3 +37,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 if not SECRET_KEY:
     logging.error("Config load failed! SECRET_KEY is missing.")
     raise ValueError("SECRET_KEY 缺失")
+
+
+REDIS_HOST=os.getenv("REDIS_HOST")
+REDIS_PORT=int(os.getenv("REDIS_PORT"))
