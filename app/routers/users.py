@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-
+from app.core.exceptions import NotFoundException
 from app.core.database import get_db
 from app.crud import user as user_crud
 from app.schemas.user import (
@@ -16,7 +16,7 @@ router = APIRouter(tags=["users"])
 async def create_user(user: UserCreateSchema, db: Session = Depends(get_db)):
     existing = user_crud.get_user_by_username(db, user.username)
     if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
+        raise NotFoundException()
     return user_crud.create_user(db, user)
 
 
@@ -24,7 +24,7 @@ async def create_user(user: UserCreateSchema, db: Session = Depends(get_db)):
 async def get_user_by_id(id: int, db: Session = Depends(get_db)):
     user = user_crud.get_user_by_id(db, id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+        raise NotFoundException()
     return user
 
 
