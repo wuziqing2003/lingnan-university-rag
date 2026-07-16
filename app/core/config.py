@@ -15,7 +15,7 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 if not DEEPSEEK_API_KEY:
     logging.error("Config load failed! DEEPSEEK_API_KEY is missing.")
-    raise ValueError("API Key 缺失")
+    raise ValueError("DEEPSEEK_API_KEY 缺失")
 
 logging.info("Config loaded successfully.")
 
@@ -41,3 +41,9 @@ if not SECRET_KEY:
 
 REDIS_HOST=os.getenv("REDIS_HOST")
 REDIS_PORT=int(os.getenv("REDIS_PORT"))
+
+
+SiliconFlow_API_KEY = os.getenv("SiliconFlow_API_KEY")
+if not SiliconFlow_API_KEY:
+    logging.error("Config load failed! SiliconFlow_API_KEY is missing")
+    raise ValueError("SiliconFlow_API_KEY 缺失")
