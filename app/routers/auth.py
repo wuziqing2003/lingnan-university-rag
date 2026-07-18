@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.core.exceptions import CustomException
@@ -26,3 +26,10 @@ async def login(
 @router.get("/profile", response_model=UserResponseSchema)
 async def read_profile(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+# ##OAuth2PasswordRequestForm 是什么
+# 它仍然是在收用户名和密码，只是约定成：
+
+# 请求类型：application/x-www-form-urlencoded（表单）
+# 字段名：username、password（还可选 scope 等）

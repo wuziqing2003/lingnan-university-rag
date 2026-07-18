@@ -11,6 +11,8 @@ from app.core.database import get_db
 from app.models.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+#告诉 FastAPI 如何从请求头中提取 Access Token（访问令牌），并告知 OpenAPI 文档（Swagger UI）去哪里获取这个令牌。
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
