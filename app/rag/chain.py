@@ -25,7 +25,7 @@ def get_embedding(text:str):
     return resp.data[0].embedding
 
 chroma = chromadb.PersistentClient(path="./chroma_db")
-collection = chroma.get_or_create_collection("lingnan_rag")
+collection = chroma.get_or_create_collection("lingnan_rag_pdfs")
 
 def retrieve(question):
     result = collection.query(
@@ -34,7 +34,7 @@ def retrieve(question):
     )
     docs = result["documents"][0] or []
 
-    return "/n/n".join(docs)
+    return "\n\n".join(docs)
 
 prompt = ChatPromptTemplate([
     ("system","你只能根据给定资料回答，资料没有的内容就说不知道。"),

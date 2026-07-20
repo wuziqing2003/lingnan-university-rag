@@ -1,4 +1,4 @@
-from sqlalchemy.exc import OperationalError,SQLAlchemyError
+from sqlalchemy.exc import OperationalError
 import uvicorn
 from fastapi import FastAPI,Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +23,7 @@ app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
 @app.exception_handler(CustomException)
-async def custon_exception_handler(request:Request,exp:CustomException):
+async def custom_exception_handler(request:Request,exp:CustomException):
     return JSONResponse(
         status_code=exp.status_code,
         content={"detail":exp.detail},
