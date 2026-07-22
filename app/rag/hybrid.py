@@ -1,5 +1,5 @@
 from __future__ import annotations
-import re
+import jieba
 import chromadb
 from rank_bm25 import BM25Okapi
 from app.rag.chain import get_embedding
@@ -16,12 +16,33 @@ _bm25: None | BM25Okapi = None
 _ids : list[str] = []
 _docs : list[str] = []
 _id_to_doc : dict[str, str] = {}
-###定义一个函数，用来分词
+
+for _w in (
+    "三助一辅",
+    "国家奖学金",
+    "国家助学金",
+    "学业奖学金",
+    "保留入学资格",
+    "学业预警",
+    "勤工助学",
+):
+
+    jieba.add_word(_w)
+
 def tokenize(text):
-    ##将输入的文本转换为小写
     text = (text or "").lower()
-    ##使用正则表达式，将文本中的中文字符和英文单词提取出来
-    return re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9]+", text)
+    tokens=[]
+    for token in jieba.lcut(text):
+        token = token.strip()
+        if not token:
+            continue
+        if token in {"\n", "\r", "\t"}:
+            continue
+        if all(not ch.isalnum() and not ("\u4e00" <= ch <= "\u9fff") for ch in token):
+            continue
+        tokens.append(token)
+    return tokens
+
 
 def get_collection():
     chroma = chromadb.PersistentClient(path=CHROMA_PATH)
