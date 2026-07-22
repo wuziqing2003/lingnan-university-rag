@@ -4,13 +4,12 @@ import fitz
 from openai import OpenAI
 from app.core.config import SiliconFlow_API_KEY
 from app.rag.chain import get_embedding
-
-
-
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+CHUNK_SIZE = 256
+CHUNK_OVERLAP = 50
 PDF_DIR=Path("data/pdfs")
 CHROMA_PATH = "./chroma_db"
 COLLECTION_NAME = "lingnan_rag_pdfs"  # 新库名，避免和旧 lingnan_rag 搅在一起
-CHUNK_SIZE = 200
 RESET = True  # True=先删同名 collection 再重建；第二次全量重跑也建议 True
 ###创建与硅基流动的连接
 embed_client = OpenAI(
@@ -32,9 +31,16 @@ def extract_text(pdf_path:Path):
 
 ###对文字进行切块
 def chunk_text(text:str ,chunk_size:int=CHUNK_SIZE ):
-    raw = [text[i:i+chunk_size] for i in range(0,len(text),chunk_size)]
-    return [c.strip() for c in raw if c.strip()]
+    splitter =  RecursiveCharacterTextSplitter(
+        separators=["\n\n", "\n", "。", "；", "，", " ", ""],
+        chunk_size=chunk_size,
+        chunk_overlap=CHUNK_OVERLAP,
+        length_function=len,
 
+    )
+    chunks = splitter.split_text(text or "")
+    return [c.strip() for c in chunks if c.strip()]
+ 
 
 def main():
     ##找到路径中的所有PDF,按文件名排序
@@ -55,7 +61,7 @@ def main():
     ok_files = 0
     skip_files = []
     total_chunks = 0
-    global_i = 0
+    global_i = 0 
 
     for pdf_path in pdf_files:
         print(f"处理中：{pdf_path.name}")
@@ -66,7 +72,7 @@ def main():
             continue
             
         chunks = chunk_text(text)
-        ids, documents, embeddings, metadatas = [], [], [], []
+        ids, documents, embeddings, metadatas  = [], [], [], []
 
         for chunk in chunks:
             ids.append(f"{pdf_path.stem}_{global_i}")
@@ -94,6 +100,10 @@ def main():
     print(f"总块数: {total_chunks}")
     print(f"collection: {COLLECTION_NAME}")
     print("入库完成")
+
+
     
 if __name__ == "__main__":
     main()
+
+
