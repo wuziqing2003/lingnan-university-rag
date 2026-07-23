@@ -26,12 +26,13 @@
 
 | 能力 | 说明 |
 |------|------|
-| **完整 RAG 闭环** | PDF 入库 → Recursive 切块 → BGE Embedding → Chroma 持久化 → Hybrid 检索 → Prompt 约束 → DeepSeek 流式生成 |
+| **完整 RAG 闭环** | PDF 入库 → Recursive 切块 → BGE Embedding → Chroma 持久化 → Hybrid 检索 → Rerank 精排 → Prompt 约束 → DeepSeek 流式生成 |
 | **混合检索** | Chroma 稠密向量 + `rank_bm25` 关键字检索，经 RRF 融合排序；中文分词采用 jieba |
+| **二次精排** | Hybrid Top10 候选经 `bge-reranker-v2-m3` 重排后取 Top3，缓解「相关块在池中但排序靠后」 |
 | **前后端分离** | Streamlit 经 `httpx` 流式请求 `POST /chat/stream`，前端不直连大模型 SDK |
 | **工程化后端** | FastAPI 分层（`routers / schemas / crud / models / core`）、CORS、统一异常、健康检查 |
 | **可落地用户体系** | MySQL + SQLAlchemy、JWT 登录、密码哈希、Redis Cache-Aside |
-| **可验证实验** | 切块与检索对照实验有完整记录，详见 [evaluation_report.md](./evaluation_report.md) |
+| **可验证实验** | 切块、混合检索与 Rerank 对照实验有完整记录，详见 [evaluation_report.md](./evaluation_report.md) |
 
 ### 运行效果
 
@@ -58,7 +59,9 @@
 FastAPI  chat router
     │  rag_chain.astream(question)
     ▼
-Hybrid 检索（Chroma 向量 + BM25 + RRF）→ Top-K 上下文
+Hybrid 检索（Chroma 向量 + BM25 + RRF）→ Top10 候选
+    ▼
+Rerank（bge-reranker-v2-m3）→ Top3 上下文
     ▼
 Prompt（仅依据检索资料作答）→ DeepSeek 流式生成 → 前端输出
 ```
@@ -79,7 +82,7 @@ Client → CORS → Router → Pydantic 校验 → Depends(get_db)
 |------|------|
 | 前端 | Streamlit、httpx |
 | API | FastAPI、Uvicorn、Pydantic、CORS |
-| RAG | ChromaDB、LangChain LCEL、Recursive 切块、BGE Embedding、rank_bm25、jieba、DeepSeek |
+| RAG | ChromaDB、LangChain LCEL、Recursive 切块、BGE Embedding、rank_bm25、jieba、bge-reranker、DeepSeek |
 | 数据 | MySQL、SQLAlchemy、Redis |
 | 安全 | JWT（python-jose）、passlib |
 | 工程 | python-dotenv、pytest、分层目录、Git 规范提交 |
@@ -99,7 +102,8 @@ lingnan-university-rag/
 │   ├── routers/                 # users / auth / chat
 │   └── rag/
 │       ├── chain.py             # LCEL RAG 链路
-│       └── hybrid.py            # 混合检索
+│       ├── hybrid.py            # 混合检索
+│       └── rerank.py            # Rerank 二次精排
 ├── scripts/                     # PDF 入库、检索探针
 ├── data/                        # 教务语料
 ├── playground/                  # 实验脚本
@@ -196,7 +200,8 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 | 实验 | 内容 | 结论摘要 |
 |------|------|----------|
 | **实验一：切块策略** | 对比固定硬切、CharacterTextSplitter、RecursiveCharacterTextSplitter（128 / 256 / 512） | Recursive 更利于保留条款边界；生产采用 Recursive + chunk_size=256 + overlap=50 |
-| **实验二：混合检索** | 对比纯向量 Dense 与 Hybrid（向量 + BM25 + RRF）；中文分词采用 jieba | 双通道检索已落地；Dense 在语义清晰问句上已较强，Hybrid 提升关键字通道稳定性，排序精度仍有优化空间 |
+| **实验二：混合检索** | 对比纯向量 Dense 与 Hybrid（向量 + BM25 + RRF）；中文分词采用 jieba | 双通道检索已落地；Dense 在语义清晰问句上已较强，Hybrid 提升关键字通道稳定性；瓶颈转为「排不准」 |
+| **实验三：Rerank 精排** | Hybrid Top10 → `bge-reranker-v2-m3` → Top3；探针对比 Hybrid / Rerank 金标位次 | 精排已接入生产 `retrieve`；针对候选内排序，不扩大召回；正式 Ragas 定量评估仍待补充 |
 
 说明：README 仅保留实验结论摘要；方法细节、对照表与局限分析请阅读实验报告。
 
@@ -208,7 +213,7 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 2. 提问语料内规章问题，展示基于原文的回答  
 3. 提问语料外问题，展示拒答与防幻觉约束  
 4. 打开 `/docs`，展示 FastAPI 接口与用户鉴权能力  
-5. 结合 [evaluation_report.md](./evaluation_report.md) 说明切块与检索的实验依据  
+5. 结合 [evaluation_report.md](./evaluation_report.md) 说明切块、Hybrid 与 Rerank 的实验依据 
 
 ---
 
@@ -218,13 +223,12 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 
 - 可演示的校园规章 RAG 问答与流式 API
 - 分层后端、JWT / Redis / MySQL、模块化前端
-- Recursive 切块入库与 Hybrid 检索接入
-- 切块与混合检索的正式实验报告
+- Recursive 切块入库、Hybrid 检索与 Rerank 精排接入
+- 切块 / 混合检索 / Rerank 的正式实验报告
 
 **规划中：**
 
 - 提示词强化与负向拒答测试
-- Rerank 二次精排
 - 基于固定问题集与 Ragas 的定量评估
 - 知识库版本治理与场景化扩容
 

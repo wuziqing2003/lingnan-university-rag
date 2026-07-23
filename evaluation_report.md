@@ -1,6 +1,6 @@
 # RAG 优化实验报告
 
-> 实验范围：高校规章 RAG 系统的切块策略与混合检索对照  
+> 实验范围：高校规章 RAG 系统的切块策略、混合检索与 Rerank 精排对照  
 > 语料基础：岭南师范学院教务相关规章 PDF（当前约 67 份，1474 个文本块）
 
 ---
@@ -235,7 +235,7 @@ re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9]+", text)
 相关能力已落地：
 
 - `app/rag/hybrid.py`：Dense + BM25 + RRF；
-- `app/rag/chain.py`：`retrieve` 调用 `hybrid_search`；
+- `app/rag/chain.py`：`retrieve` 初版接入 `hybrid_search`（后续由实验三叠加 Rerank）；
 - `scripts/retrieve_probe.py`：Dense / Hybrid 对照探针；
 - 依赖：`rank_bm25`、`jieba`。
 
@@ -245,6 +245,130 @@ re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9]+", text)
 2. 评估以人工阅读 Top3 预览为主，尚未计算 Hit@3、MRR 或 Ragas 指标；
 3. RRF 只融合排名，不能区分“同文件次相关块”与“直接回答块”；
 4. 切块边界仍会导致职责说明与申请条件出现在同一预览片段中，增加人工判断难度；
-5. 本实验未引入跨编码器 Rerank；对于“正确块已进入候选但排序靠后”的问题，仍缺少二次精排验证。
+5. 本实验阶段尚未引入跨编码器 Rerank；“正确块已进入候选但排序靠后”的问题交给实验三验证。
 
 因此，本部分结论表述为：混合检索双通道已可用，并改善了关键字通道稳定性；在当前问句集上，排序精度仍有提升空间，适宜作为后续 Rerank 实验的前置条件，而不表述为检索效果的最终最优方案。
+
+---
+
+## 实验三：Rerank 二次精排
+
+### 1. 实验目标
+
+实验二表明：在专名清晰的规章问句上，Dense / Hybrid 已能稳住目标文档，主要瓶颈从“召不回”转为“排不准”。典型例子是“研究生三助一辅岗位怎么申请？”——更直接回答流程的「第七条聘用程序」已进入 Hybrid Top3，但常排在「申请条件 / 岗位职责」之后。
+
+RRF 只融合两路名次，不直接建模「当前问题与某段文字是否最贴意图」。本实验在 Hybrid 初筛结果之上引入跨编码器式 Rerank，对候选做二次相关性打分，验证能否改善进入生成阶段的 Top3 排序。
+
+实验主要回答三个问题：
+
+1. 能否在现有 Hybrid 链路外稳定接入云端 Rerank API？
+2. 对 Hybrid Top10 做精排后，金标相关块在 Top3 中的位次是否改善？
+3. Rerank 解决的是什么问题、不能解决什么问题？
+
+### 2. 实验设置
+
+| 项目 | 设置 |
+|------|------|
+| 初筛 | `hybrid_search`，`n_results=10`（Dense + BM25 + RRF） |
+| 精排模型 | `BAAI/bge-reranker-v2-m3`（硅基流动 `/v1/rerank`） |
+| 精排输入 | Hybrid 返回的 Top10 正文列表 |
+| 精排输出 | 重排后 Top3 正文 |
+| 实现文件 | `app/rag/rerank.py` |
+| 链路接入 | `app/rag/chain.py` 的 `retrieve`：`hybrid_search(10)` → `rerank_documents(..., 3)` |
+| 对照脚本 | `scripts/retrieve_probe.py`（`probe_rerank` / `compare_hybrid_vs_rerank`） |
+| 评估方式 | 人工阅读预览 + 金标关键词位次（`hit_rank`） |
+
+**方法说明：**
+
+```text
+问题
+  └─ Hybrid：Dense + BM25 + RRF → Top10 候选正文
+        └─ Rerank：query × 各候选成对打分 → 按相关性重排 → Top3
+              └─ join 为 context → Prompt → LLM
+```
+
+说明：
+
+- Rerank **不重新检索全库**，只对初筛池内候选重排；池中没有的块无法被“捞回”。
+- API 返回的是候选下标 `index`（本实验设置 `return_documents=False`），再映射回原文列表。
+- 候选为空直接返回；仅 1 条候选时跳过 API，原样返回。
+
+**探针问句与金标关键词（示例）：**
+
+| 问句 | 金标关键词 |
+|------|------------|
+| 本科生勤工助学怎么申请？ | 勤工助学 |
+| 普通全日制本科生转专业需要什么条件？ | 转专业 |
+| 新生可以申请保留入学资格吗？期限多久？ | 保留入学资格 |
+| 缓考怎么申请？ | 缓考 |
+| 教学事故怎么认定？ | 教学事故 |
+
+位次判定：`hit_rank` 检查 Top3 中是否存在同时包含全部金标词的块；若有则返回其名次（1/2/3），否则为未命中。
+
+### 3. 结果
+
+#### 3.1 工程接入
+
+已验证以下链路可运行：
+
+1. Hybrid 产出 Top10 字符串列表；
+2. 调用硅基流动 Rerank 接口完成重排；
+3. `retrieve` 将精排后的 Top3 拼接为生成上下文；
+4. 探针可同时打印 Hybrid Top10 预览与 Rerank Top3，并输出 Hybrid Top3 / Rerank Top3 的金标位次。
+
+#### 3.2 Hybrid Top3 与 Rerank Top3 对照观察
+
+对照逻辑与实验二一致：同一问句下比较「仅取 Hybrid 前三」与「Hybrid Top10 再 Rerank 取三」。
+
+主要观察：
+
+1. **Rerank 针对的是实验二暴露的排序问题。**  
+   当目标流程/条件段落已进入 Hybrid 候选池时，精排有机会把更贴「怎么申请 / 怎么认定」意图的块前移，压低同文件中的职责说明、背景介绍等次相关块。
+
+2. **对本来 Top1 已正确的问句，收益可能不明显。**  
+   语义清晰、专名完整时，Hybrid（甚至 Dense）Top1 往往已经可用，Rerank 更多表现为顺序微调或基本不变。
+
+3. **金标关键词过粗会削弱定量对比的灵敏度。**  
+   例如仅用「勤工助学」「转专业」时，多段同主题块都可能同时命中，位次数字难以区分“次相关”与“直接回答”。人工阅读预览仍是必要补充。
+
+4. **Rerank 不能弥补初筛漏召回。**  
+   若正确块未进入 Hybrid Top10，精排无法从全库补回；此时应回查分词、切块或扩大候选数，而不是只调 Rerank。
+
+#### 3.3 与实验二结论的衔接
+
+| 阶段 | 主要作用 | 仍存缺口 |
+|------|----------|----------|
+| Dense / Hybrid | 稳住目标规章、降低跑题噪声 | 同主题次相关块可能压过直接答问块 |
+| Rerank | 在 Top10 内按问题—段落相关性精排 | 依赖初筛质量；块边界混杂时仍难完美 |
+
+### 4. 结论
+
+1. **工程可行性已验证。** 在不改动 Chroma 内核的前提下，可用云端 `bge-reranker-v2-m3` 对 Hybrid 候选做二次精排，并已接入生产 `retrieve`。
+2. **职责边界清晰。** Hybrid 负责召回与粗排；Rerank 负责候选内精排，不扩大召回范围。
+3. **问题定位准确。** 本实验直接回应实验二“聘用程序在 Top3 但不是 Top1”类现象：相关块已在池中时，应用更强的 query—document 相关性模型，而不是宣称 Hybrid 全面优于 Dense。
+4. **效果表述需克制。** 当前评估仍以探针预览与粗粒度金标位次为主，尚未用大规模 Ground Truth 或 Ragas 证明全面、稳定的指标提升。
+
+### 5. 对项目的影响
+
+相关能力已落地：
+
+- `app/rag/rerank.py`：硅基流动 Rerank 封装；
+- `app/rag/chain.py`：`retrieve = hybrid_search(10) → rerank_documents(top_n=3)`；
+- `scripts/retrieve_probe.py`：增加 Rerank 预览与 Hybrid / Rerank 金标位次对照；
+- 依赖：`httpx`（调用 `/v1/rerank`）。
+
+生产检索链路现为：
+
+```text
+问题 → Hybrid Top10 → Rerank Top3 → Prompt → DeepSeek
+```
+
+### 6. 实验局限
+
+1. 探针问句数量有限，金标多为单关键词，不能替代正式 Hit@3 / MRR；
+2. 未计算 Context Precision、Faithfulness、Answer Relevancy 等生成侧指标；
+3. Rerank 增加一次外部 API 调用，带来延迟与可用性依赖（密钥、网络、超时）；
+4. 切块边界仍可能导致职责与条件同块混杂，精排只能缓解排序，不能拆开语义；
+5. 未系统对比「无 Rerank（Hybrid Top3）」与「有 Rerank」在完整问答正确率上的差异。
+
+因此，本部分结论表述为：Rerank 二次精排已接入，并针对实验二的“排不准”问题提供了工程解法；在当前探针评估下，它是对 Hybrid 粗排的必要补充，但尚不能表述为已用严格量化指标证明全面优于无 Rerank 基线。后续应用自建 Ground Truth 与 Ragas，对有无 Rerank 两组做定量对照。
