@@ -1,0 +1,10 @@
+{
+  "mode": "no_rerank",
+  "n": 5,
+  "time": "2026-07-23T21:15:31",
+  "scores": {
+    "context_precision": 0.7166666666208333,
+    "faithfulness": 1.0,
+    "answer_relevancy": 0.8462878452355994
+  }
+}
