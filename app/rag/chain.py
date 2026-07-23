@@ -42,8 +42,9 @@ collection = chroma.get_or_create_collection("lingnan_rag_pdfs")
 
 def retrieve(question):
     from app.rag.hybrid import hybrid_search
-
-    docs = hybrid_search(question,n_results=3)
+    from app.rag.rerank import rerank_documents
+    candidates = hybrid_search(question,n_results=10)
+    docs = rerank_documents(question,candidates,top_n=3)
     return "\n\n".join(docs)
    
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 import jieba
 import chromadb
 from rank_bm25 import BM25Okapi
@@ -148,7 +148,7 @@ def rrf_fuse(rank_lists, k=RRF_K):
     return sorted(scores.keys(),key=lambda i:scores[i],reverse=True)
 
 
-def hybrid_search(question,n_results =3):
+def hybrid_search(question,n_results =10):
 
 
     vec_ids = dense_rank(question,n=CANDIDATE_N)
