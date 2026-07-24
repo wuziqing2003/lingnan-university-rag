@@ -14,7 +14,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas import evaluate
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
-from ragas.metrics import answer_relevancy, context_precision, faithfulness
+from ragas.metrics import answer_relevancy, context_precision, faithfulness,context_recall
 
 from app.core.config import DEEPSEEK_API_KEY, SiliconFlow_API_KEY
 from app.rag.chain import SYSTEM_PROMPT
@@ -57,6 +57,7 @@ def get_answer(question: str, contexts: list[str]) -> str:
 
 
 def main():
+    ###命令行说明书，用来接收终端的信息
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["no_rerank", "rerank"], required=True)
     parser.add_argument("--gt", default=str(GT_PATH))
@@ -65,6 +66,8 @@ def main():
         default=None,
         help="默认写到 evaluation/results_{mode}.json",
     )
+
+    #解析参数
     args = parser.parse_args()
     out_path = Path(args.out or ROOT / "evaluation" / f"results_{args.mode}.json")
 
@@ -81,7 +84,7 @@ def main():
         contexts_list.append(ctx)
         gts.append(item["ground_truth"])
 
-
+###打包成ragas数据集
     dataset = Dataset.from_dict(
         {
             "user_input": questions,
@@ -111,12 +114,19 @@ def main():
 
     result = evaluate(
         dataset,
-        metrics=[context_precision, faithfulness, answer_relevancy],
+        metrics=[context_precision, faithfulness, answer_relevancy,context_recall],
         llm=judge,
         embeddings=emb,
     )
     print(result)
 
+    df = result.to_pandas()  # 若当前版本支持
+  
+    detail_path = ROOT / "evaluation" / f"results_{args.mode}_detail.json"
+    detail_path.write_text(
+        df.to_json(orient="records", force_ascii=False, indent=2),
+        encoding="utf-8",
+)
     scores = {}
     for k, v in result._repr_dict.items():
         scores[k] = None if v != v else float(v)  # NaN -> None
