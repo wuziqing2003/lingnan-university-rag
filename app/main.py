@@ -23,13 +23,13 @@ app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
 @app.exception_handler(CustomException)
-async def custom_exception_handler(request:Request,exp:CustomException):
+def custom_exception_handler(request:Request,exp:CustomException):
     return JSONResponse(
         status_code=exp.status_code,
         content={"detail":exp.detail},
     )
 @app.exception_handler(OperationalError)
-async def database_exception_handler(request:Request,exc:OperationalError):
+def database_exception_handler(request:Request,exc:OperationalError):
     return JSONResponse(
         status_code= 503 ,
         content={
@@ -39,7 +39,7 @@ async def database_exception_handler(request:Request,exc:OperationalError):
 
     )
 @app.get("/health")
-async def health():
+def health():
     return {"status":"ok"}
 
 

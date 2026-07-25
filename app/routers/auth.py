@@ -12,7 +12,7 @@ router = APIRouter(tags=["auth"])
 
 
 @router.post("/login", response_model=TokenSchema)
-async def login(
+def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -24,7 +24,7 @@ async def login(
 
 
 @router.get("/profile", response_model=UserResponseSchema)
-async def read_profile(current_user: User = Depends(get_current_user)):
+def read_profile(current_user: User = Depends(get_current_user)):
     return current_user
 
 

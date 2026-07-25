@@ -14,7 +14,7 @@ router = APIRouter(tags=["users"])
 
 
 @router.post("/user", response_model=UserResponseSchema)
-async def create_user(user: UserCreateSchema, db: Session = Depends(get_db)):
+def create_user(user: UserCreateSchema, db: Session = Depends(get_db)):
     existing = user_crud.get_user_by_username(db, user.username)
     if existing:
         raise CustomException(detail="用户名已存在",status_code=409)
@@ -22,7 +22,7 @@ async def create_user(user: UserCreateSchema, db: Session = Depends(get_db)):
 
 
 @router.get("/user/{id}", response_model=UserResponseSchema)
-async def get_user_by_id(id: int, db: Session = Depends(get_db)):
+def get_user_by_id(id: int, db: Session = Depends(get_db)):
     cache_key = f"user:{id}"
     cached = redis_client.get(cache_key)
     if cached:
@@ -41,7 +41,7 @@ async def get_user_by_id(id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/user", response_model=UserListResponseSchema)
-async def get_users(
+def get_users(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=10, le=100),
     db: Session = Depends(get_db),
