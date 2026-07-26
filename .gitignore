@@ -3,3 +3,9 @@ __pycache__/
 .env
 .venv/
 .cursor/
+chroma_db/
+.pytest_cache/
+**/__pycache__/
+*.pyc
+playground/_*.json
+playground/_*.txt

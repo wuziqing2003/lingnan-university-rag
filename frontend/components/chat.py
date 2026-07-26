@@ -27,27 +27,27 @@ def render_chat() -> None:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    prompt = st.session_state.pop("pending_question", None) or st.chat_input(
-        "输入教务、资助、学籍等相关问题…"
-    )
+    pending = st.session_state.pop("pending_question", None)
+    typed = st.chat_input("输入教务、资助、学籍等相关问题…")
+    prompt = pending or typed
 
-    if not prompt:
-        return
+    if prompt:
+       
 
-    logging.info("用户提问: %s", prompt[:50])
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+        logging.info("用户提问: %s", prompt[:50])
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    with st.chat_message("assistant"):
-        try:
-            full_response = st.write_stream(stream_from_backend(prompt))
-            if not full_response:
-                full_response = ""
-            st.session_state.messages.append(
-                {"role": "assistant", "content": full_response}
-            )
-            logging.info("回答内容: %s", full_response[:50])
-        except httpx.HTTPError:
-            logging.exception("FastAPI 流式调用失败")
-            st.error("无法连接后端或生成失败，请确认 FastAPI 已启动后重试。")
+        with st.chat_message("assistant"):
+            try:
+                full_response = st.write_stream(stream_from_backend(prompt))
+                if not full_response:
+                    full_response = ""
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": full_response}
+                )
+                logging.info("回答内容: %s", full_response[:50])
+            except httpx.HTTPError:
+                logging.exception("FastAPI 流式调用失败")
+                st.error("无法连接后端或生成失败，请确认 FastAPI 已启动后重试。")
