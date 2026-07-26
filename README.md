@@ -40,7 +40,11 @@
 
 ## 系统架构
 
-![请求生命周期 / 架构示意](./image/architecture.png)
+主路径是一次问答的完整生成周期（前端 → FastAPI → Hybrid / Rerank → 流式生成）。离线入库与用户鉴权不在主图展开，见下方文字与[附录](#附录用户接口请求生命周期)。
+
+**在线问答：用户请求完整生成周期**
+
+![RAG 问答请求完整生成周期](./image/rag_qa_lifecycle.png)
 
 **一次问答的数据流：**
 
@@ -58,6 +62,12 @@ Rerank（bge-reranker-v2-m3）→ Top3 上下文
 Prompt（仅依据检索资料作答）→ DeepSeek 流式生成 → 前端输出
 ```
 
+**离线入库（一次构建知识库）：**
+
+```text
+data/pdfs → 抽文本 → Recursive 切块(256/50) → BGE Embedding → chroma_db
+```
+
 ---
 
 ## 核心能力
@@ -69,7 +79,7 @@ Prompt（仅依据检索资料作答）→ DeepSeek 流式生成 → 前端输�
 | **二次精排** | Hybrid Top10 → `bge-reranker-v2-m3` → Top3，改善「相关块在池中但排得偏后」 |
 | **流式接口** | `POST /chat/stream`，前端不直连大模型 SDK |
 | **对照实验** | 切块 / Hybrid / Rerank / Ragas，见 `docs/` 与 `evaluation/` |
-| **附带能力** | FastAPI 分层、JWT 登录、MySQL、Redis 缓存（非本项目主线，见文末附录） |
+| **附带能力** | FastAPI 分层、JWT 登录、MySQL、Redis 缓存（非 RAG 主线，见[附录](#附录用户接口请求生命周期)） |
 
 ### 运行截图
 
@@ -130,6 +140,8 @@ lingnan-university-rag/
 ├── playground/             # 实验脚本
 ├── tests/
 ├── image/
+│   ├── rag_qa_lifecycle.png      # 主图：问答生成周期
+│   └── user_api_lifecycle.png    # 附录：用户接口请求生命周期
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -219,3 +231,9 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 | GET | `/user` | 用户分页列表 |
 | POST | `/login` | 登录，返回 JWT |
 | GET | `/profile` | 当前用户信息（Bearer Token） |
+
+## 附录：用户接口请求生命周期
+
+> 非 RAG 主路径。对应注册 / 登录 / 按 id 查用户等接口，体现 FastAPI 分层、Schema 校验、Redis Cache-Aside 与全局异常处理。
+
+![用户接口请求生命周期（CORS → 校验 → Redis/MySQL → 异常）](./image/user_api_lifecycle.png)
