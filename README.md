@@ -13,10 +13,10 @@
 
 ## 项目亮点
 
-1. **检索链路完整**：PDF 入库 → Recursive 切块 → BGE Embedding → Chroma → Hybrid（向量 + BM25 + RRF）→ `bge-reranker-v2-m3` 精排 → Prompt 约束 → DeepSeek 流式生成  
+1. **检索链路完整**：PDF 按页入库 → Recursive 切块 → BGE Embedding → Chroma → Hybrid（向量 + BM25 + RRF）→ `bge-reranker-v2-m3` 精排 → Prompt 约束 → DeepSeek 流式生成，并回传来源页码  
 2. **有对照实验，不只调通**：用 15 道自建题 + Ragas，对比有无 Rerank；Context Precision 从约 **0.67 提升到 0.90**  
 3. **拒答行为有回归集**：另建 15 题（该答 / 该拒 / 部分答），人工记误拒与幻觉；当前 **误拒 1、幻觉 0**，不单凭感觉调 Prompt  
-4. **前后端可演示**：Streamlit 通过 `httpx` 调用 FastAPI `POST /chat/stream`，资料不足时要求模型拒答，减轻幻觉
+4. **前后端可演示**：Streamlit 通过 `httpx` 调用 FastAPI `POST /chat/stream`，流式返回答案并展示 PDF 来源 / 页码；资料不足时要求模型拒答，减轻幻觉
 
 ### Ragas 评估结果（15 题）
 
@@ -65,19 +65,22 @@
     │  httpx stream  POST /chat/stream
     ▼
 FastAPI  chat router
-    │  rag_chain.astream(question)
+    │  同一批 hits：生成答案 + 附加来源元数据
     ▼
-Hybrid 检索（Chroma 向量 + BM25 + RRF）→ Top10 候选
+Hybrid 检索（Chroma 向量 + BM25 + RRF）→ Top10 候选（含 source / page）
     ▼
-Rerank（bge-reranker-v2-m3）→ Top3 上下文
+Rerank（bge-reranker-v2-m3）→ Top3 hit
     ▼
-Prompt（仅依据检索资料作答）→ DeepSeek 流式生成 → 前端输出
+Prompt（仅依据检索资料作答）→ DeepSeek 流式生成
+    ▼
+前端：流式展示答案 → 解析来源 JSON → 显示 PDF 名与页码
 ```
 
 **离线入库（一次构建知识库）：**
 
 ```text
-data/pdfs → 抽文本 → Recursive 切块(256/50) → BGE Embedding → chroma_db
+data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
+         → chroma_db（metadata: source, page）
 ```
 
 ---
@@ -89,15 +92,16 @@ data/pdfs → 抽文本 → Recursive 切块(256/50) → BGE Embedding → chrom
 | **RAG 闭环** | 入库 → 切块 → Embedding → 检索 → 精排 → 生成 |
 | **混合检索** | 稠密向量 + `rank_bm25`，RRF 融合；中文分词用 jieba |
 | **二次精排** | Hybrid Top10 → `bge-reranker-v2-m3` → Top3，改善「相关块在池中但排得偏后」 |
-| **流式接口** | `POST /chat/stream`，前端不直连大模型 SDK |
+| **流式接口** | `POST /chat/stream`，答案流式输出后附带来源 JSON（PDF 名 / 页码 / 片段） |
+| **可溯源展示** | 前端解析同一批检索 hit，在回答下方展示出处，避免模型自行编造来源 |
 | **对照实验** | 切块 / Hybrid / Rerank / Ragas / 拒答小金标，见 `docs/` 与 `evaluation/` |
 | **附带能力** | FastAPI 分层、JWT 登录、MySQL、Redis 缓存（非 RAG 主线，见[附录](#附录用户接口请求生命周期)） |
 
 ### 运行截图
 
-**Streamlit 问答界面**
+**Streamlit 问答界面（答案 + PDF 来源 / 页码）**
 
-![Streamlit 正常问答演示](./image/streamlit.png)
+![Streamlit 问答演示：流式回答并展示规章来源](./image/streamlit.png)
 
 **FastAPI Swagger（/docs）**
 
@@ -239,7 +243,7 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/health` | 健康检查 |
-| POST | `/chat/stream` | RAG 流式问答（主接口） |
+| POST | `/chat/stream` | RAG 流式问答（主接口；答案后附带来源 JSON） |
 | POST | `/user` | 用户注册 |
 | GET | `/user/{id}` | 按 id 查询（Redis 缓存） |
 | GET | `/user` | 用户分页列表 |
