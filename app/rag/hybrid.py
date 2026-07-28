@@ -16,7 +16,7 @@ _bm25: None | BM25Okapi = None
 _ids : list[str] = []
 _docs : list[str] = []
 _id_to_doc : dict[str, str] = {}
-
+_id_to_meta : dict[str,dict] = {}
 for _w in (
     "三助一辅",
     "国家奖学金",
@@ -51,7 +51,7 @@ def get_collection():
 ##计算每个块有多少个词
 def build_bm25_index(force:bool=False):
 ##定义四个全局变量
-    global _bm25, _ids, _docs, _id_to_doc
+    global _bm25, _ids, _docs, _id_to_doc,_id_to_meta
 
 ##判断BM25倒排索引是否已经存在
     if _bm25 is not None and not force:
@@ -59,11 +59,13 @@ def build_bm25_index(force:bool=False):
 # Chroma 稠密向量集合
     collection = get_collection()
 ##在collection里面拿到两个列表
-    data = collection.get(include=["documents"])
+    data = collection.get(include=["documents","metadatas"])
 #一个存放着每个chunk的ID
     _ids = data["ids"] or []
 #一个存放着每个chunk的原文
     _docs = data["documents"] or []
+
+    metas = data["metadatas"] or []
 #判断这两个是否为空
     if not _ids or not _docs:
          raise RuntimeError("Chroma 集合为空，请先运行 scripts/ingest_pdfs.py 入库")
@@ -73,7 +75,7 @@ def build_bm25_index(force:bool=False):
     _bm25 = BM25Okapi(tokenized)
 
     _id_to_doc = dict(zip(_ids,_docs))
-
+    _id_to_meta = dict(zip(_ids,metas))
 # # 这是 _bm25 对象内部的核心数据结构（简化还原）
 # _bm25 = {
 #     # 1. 原始词渣列表（留着备用，用于算词频）
@@ -156,7 +158,17 @@ def hybrid_search(question,n_results =10):
 
     fused_ids = rrf_fuse([vec_ids,kw_ids])[:n_results]
 
-
-    return [_id_to_doc[i] for i in fused_ids if i in _id_to_doc ]
+    hits = []
+    for doc_id in fused_ids:
+        if doc_id not in _id_to_doc:
+            continue
+        meta = _id_to_meta.get(doc_id) or {}
+        hits.append({
+            "id":doc_id,
+            "text":_id_to_doc[doc_id],
+            "source": meta.get("source", "未知"),
+            "page": meta.get("page"), 
+        })
+    return hits
   
 

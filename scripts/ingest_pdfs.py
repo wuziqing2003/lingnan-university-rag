@@ -1,10 +1,14 @@
+import sys
 from pathlib import Path
 import chromadb
 import fitz 
 from openai import OpenAI
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.config import SiliconFlow_API_KEY
 from app.rag.chain import get_embedding
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 CHUNK_SIZE = 256
 CHUNK_OVERLAP = 50
 PDF_DIR=Path("data/pdfs")
@@ -23,11 +27,13 @@ embed_client = OpenAI(
 ##第三步是用换行符把各页文字拼成一个大字符串，去掉首尾空白
 def extract_text(pdf_path:Path):
     doc = fitz.open(pdf_path)
-    parts = []
-    for page in doc:
-        parts.append(page.get_text())
+    pages = []
+    for i,page in enumerate(doc,1):
+        text = (page.get_text() or "").strip()
+        if text:
+            pages.append((i,text))
     doc.close()
-    return "\n".join(parts).strip()
+    return pages
 
 ###对文字进行切块
 def chunk_text(text:str ,chunk_size:int=CHUNK_SIZE ):
@@ -65,32 +71,35 @@ def main():
 
     for pdf_path in pdf_files:
         print(f"处理中：{pdf_path.name}")
-        text = extract_text(pdf_path)
-        if len(text) < 50:
+        pages = extract_text(pdf_path)
+        if sum(len(t) for _,t in pages) < 50:
             skip_files.append(pdf_path.name)
             print(f"  -> 跳过（文本过短/可能是扫描件）")
             continue
             
-        chunks = chunk_text(text)
         ids, documents, embeddings, metadatas  = [], [], [], []
-
-        for chunk in chunks:
-            ids.append(f"{pdf_path.stem}_{global_i}")
-            documents.append(chunk)
-            embeddings.append(get_embedding(chunk))
-            metadatas.append({"source": pdf_path.name})
-            global_i += 1
-            total_chunks += 1
+        for page_no,page_text in pages:
+            for chunk in chunk_text(page_text):
+                ids.append(f"{pdf_path.stem}_{global_i}")
+                documents.append(chunk)
+                embeddings.append(get_embedding(chunk))
+                metadatas.append({
+                    "source":pdf_path.name,
+                    "page":page_no,
+                })
+                global_i += 1
+                total_chunks += 1
+         
 
         collection.add(
-            ids = ids,
-            documents=documents,
-            embeddings=embeddings,
-            metadatas=metadatas,
-        )
+                ids = ids,
+                documents=documents,
+                embeddings=embeddings,
+                metadatas=metadatas,
+            )
         ok_files += 1
         print(f"")
-        print(f"  -> 入库 {len(chunks)} 块")
+        print(f"  -> 入库 {len(documents)} 块")
 
     print("========== 汇总 ==========")
     print(f"成功文件: {ok_files}")

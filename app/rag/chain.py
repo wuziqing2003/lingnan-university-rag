@@ -42,12 +42,23 @@ def get_embedding(text:str):
 chroma = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma.get_or_create_collection("lingnan_rag_pdfs")
 
-def retrieve(question):
+def retrieve_hits(question):
     from app.rag.hybrid import hybrid_search
     from app.rag.rerank import rerank_documents
     candidates = hybrid_search(question,n_results=10)
-    docs = rerank_documents(question,candidates,top_n=3)
-    return "\n\n".join(docs)
+    return rerank_documents(question,candidates,top_n=3)
+
+def format_context(hits:list[dict]):
+    blocks = []
+    for i,h  in enumerate(hits,1):
+        page = h.get("page")
+        page_s = f" p.{page}" if page is not None else ""
+        blocks.append(f"[资料{i}] 来源：{h.get('source', '未知')}{page_s}\n{h.get('text', '')}")
+
+    return "\n\n".join(blocks)
+
+def retrieve(question):
+    return format_context(retrieve_hits(question))
    
 
 prompt = ChatPromptTemplate([
@@ -65,13 +76,13 @@ model = ChatOpenAI(
 
 parser = StrOutputParser()
 
-
-rag_chain = (
-   {
-    "context":RunnableLambda(retrieve),
-    "question":RunnablePassthrough()
-   }
-    |prompt
-    |model
-    |parser
-)
+def build_chain_from_hits(hits):
+    return  (
+        {
+            "context":RunnableLambda(lambda _: format_context(hits)),
+            "question":RunnablePassthrough()
+        }
+            |prompt
+            |model
+            |parser
+        )
