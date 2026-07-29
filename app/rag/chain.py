@@ -45,8 +45,10 @@ collection = chroma.get_or_create_collection("lingnan_rag_pdfs")
 def retrieve_hits(question):
     from app.rag.hybrid import hybrid_search
     from app.rag.rerank import rerank_documents
-    candidates = hybrid_search(question,n_results=10)
-    return rerank_documents(question,candidates,top_n=3)
+    from app.rag.rewrite import rewrite_query
+    search_query = rewrite_query(question)
+    candidates = hybrid_search(search_query,n_results=10)
+    return rerank_documents(search_query,candidates,top_n=3)
 
 def format_context(hits:list[dict]):
     blocks = []
@@ -57,8 +59,7 @@ def format_context(hits:list[dict]):
 
     return "\n\n".join(blocks)
 
-def retrieve(question):
-    return format_context(retrieve_hits(question))
+
    
 
 prompt = ChatPromptTemplate([
