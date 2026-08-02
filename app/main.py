@@ -7,7 +7,7 @@ from app.models.user import User  # noqa: F401  # 注册模型到 Base.metadata
 from app.routers import auth, users,chat
 from fastapi.responses import JSONResponse
 from app.core.exceptions import CustomException
-
+from app.routers import auth, users, chat, agent
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="lingnan-api")
 ###给应用加一个中间件，任何请求进出都会经过它
@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(agent.router)
 @app.exception_handler(CustomException)
 def custom_exception_handler(request:Request,exp:CustomException):
     return JSONResponse(

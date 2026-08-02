@@ -3,6 +3,7 @@ import jieba
 import chromadb
 from rank_bm25 import BM25Okapi
 from app.rag.chain import get_embedding
+from concurrent.futures import ThreadPoolExecutor
 
 CHROMA_PATH = "./chroma_db"
 COLLECTION_NAME = "lingnan_rag_pdfs"
@@ -151,10 +152,13 @@ def rrf_fuse(rank_lists, k=RRF_K):
 
 
 def hybrid_search(question,n_results =10):
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        dense_fut = pool.submit(dense_rank,question,n=CANDIDATE_N)
+        kw_fut = pool.submit(bm25_rank,question,n=CANDIDATE_N)
+        vec_ids = dense_fut.result()
+        kw_ids = kw_fut.result()
 
 
-    vec_ids = dense_rank(question,n=CANDIDATE_N)
-    kw_ids = bm25_rank(question,n=CANDIDATE_N)
 
     fused_ids = rrf_fuse([vec_ids,kw_ids])[:n_results]
 
