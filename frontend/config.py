@@ -1,7 +1,7 @@
 from pathlib import Path
 
 API_BASE = "http://127.0.0.1:8000"
-CHAT_URL = f"{API_BASE}/chat/stream"
+CHAT_URL = f"{API_BASE}/agent/stream"
 HEALTH_URL = f"{API_BASE}/health"
 BADGE_PATH = Path("image/School_badge.jpg")
 

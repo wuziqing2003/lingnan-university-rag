@@ -8,6 +8,7 @@ SOURCE_SEP = "\n\n<!--SOURCES-->\n"
 @dataclass
 class StreamResult:
     sources:list = field(default_factory=list)
+    error : str | None = None
 
 
 
@@ -27,43 +28,46 @@ def stream_from_backend(question: str):
 
     result = StreamResult()
     def gen():
-        pending=""
-        reading_sources = False
-        raw = ""
-        
-        with httpx.Client(timeout = None) as client:
-            with client.stream("POST",CHAT_URL,json={"question":question}) as response:
+        buf = ""
+        with httpx.Client(timeout=None) as client:
+            with client.stream(
+                "POST",
+                CHAT_URL,
+                json={"question": question},
+                headers={"Accept": "application/x-ndjson"},
+            ) as response:
                 response.raise_for_status()
                 for chunk in response.iter_text():
                     if not chunk:
                         continue
-
-                    if reading_sources:
-                        raw += chunk
-                        continue
-
-                    pending += chunk
-
-                    if SOURCE_SEP in pending:
-                        answer_part,raw = pending.split(SOURCE_SEP,1)
-                        if answer_part:
-                            yield answer_part
-
-                        reading_sources = True
-
-                    else:
-                        keep = len(SOURCE_SEP) - 1
-                        if len(pending) > keep:
-                            yield pending[:-keep]
-                            pending = pending[-keep:]
-
-
-        result.sources = json.loads(raw) if raw.strip() else []
+                    buf += chunk
+                    while "\n" in buf:
+                        line, buf = buf.split("\n", 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        et = event.get("type")
+                        if et == "token":
+                            delta = event.get("delta") or ""
+                            if delta:
+                                yield delta
+                        elif et == "sources":
+                            items = event.get("items") or []
+                            if items:
+                                result.sources = items
+                        elif et == "error":
+                            result.error = event.get("message") or "未知错误"
+                        elif et == "done":
+                            return
+        if result.error:
+            yield f"\n\n（错误：{result.error}）"
 
     return gen(),result
-
-   
-
+  
             
 
                     

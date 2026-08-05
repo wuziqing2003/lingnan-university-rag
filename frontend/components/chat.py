@@ -49,6 +49,8 @@ def render_chat() -> None:
                 full_response = st.write_stream(gen)
                 if not full_response:
                     full_response = ""
+                if result.error:
+                    st.warning(result.error)
                 for s in result.sources:
                     page = s.get("page")
                     page_s = f" p.{page}" if page is not None else ""
@@ -60,6 +62,7 @@ def render_chat() -> None:
                         "sources": result.sources,
                     }
                 )
+              
                 logging.info("回答内容: %s", full_response[:50])
                             
                 
