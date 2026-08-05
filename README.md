@@ -14,29 +14,29 @@
 ## 项目亮点
 
 1. **检索链路完整**：PDF 按页入库 → Recursive 切块 → BGE Embedding → Chroma → Hybrid（向量 + BM25 + RRF）→ `bge-reranker-v2-m3` 精排 → Prompt 约束 → DeepSeek 流式生成，并回传来源页码  
-2. **有对照实验，不只调通**：用 15 道自建题 + Ragas，对比有无 Rerank；Context Precision 从约 **0.67 提升到 0.90**  
-3. **拒答行为有回归集**：另建 15 题（该答 / 该拒 / 部分答），人工记误拒与幻觉；当前 **误拒 1、幻觉 0**，不单凭感觉调 Prompt  
+2. **有对照实验，不只调通**：用 **50** 道自建题 + Ragas，对比有无 Rerank；四项指标均提升，Context Precision 约 **0.73 → 0.79**，Answer Relevancy 约 **0.65 → 0.83**  
+3. **拒答行为有回归集**：另建 **30** 题（该答 10 / 部分答 10 / 该拒 10），人工记误拒与幻觉；当前 **误拒 3、幻觉 0**，不单凭感觉调 Prompt  
 4. **前后端可演示**：Streamlit 通过 `httpx` 调用 FastAPI `POST /chat/stream`，流式返回答案并展示 PDF 来源 / 页码；资料不足时要求模型拒答，减轻幻觉
 
-### Ragas 评估结果（15 题）
+### Ragas 评估结果（50 题）
 
 | 指标 | 无 Rerank | 有 Rerank | 差值 |
 |------|----------:|----------:|-----:|
-| Context Precision | 0.67 | **0.90** | +0.23 |
-| Context Recall | 0.83 | 0.83 | 0 |
-| Faithfulness | 0.96 | 0.98 | +0.02 |
-| Answer Relevancy | 0.83 | 0.86 | +0.03 |
+| Context Precision | 0.73 | **0.79** | +0.06 |
+| Context Recall | 0.74 | **0.88** | +0.14 |
+| Faithfulness | 0.86 | **0.89** | +0.03 |
+| Answer Relevancy | 0.65 | **0.83** | +0.18 |
 
-**怎么理解：** Rerank 主要改善进入生成的 Top3 排序（Precision 明显上升）；Recall 两组相同，说明精排不会扩大召回，漏召回仍要回到切块 / Hybrid 初筛上查。
+**怎么理解：** Rerank 改善进入生成的 Top3 质量（Precision / Relevancy 上升）；Recall 也会因最终 Top3 置换而变化，但**不能**捞到 Hybrid Top10 以外的块——两边仍 Recall=0 的题要回到切块 / 初筛上查。
 
-### 拒答 / 幻觉行为回归（15 题）
+### 拒答 / 幻觉行为回归（30 题）
 
 | 指标 | 结果 |
 |------|------|
-| 题型 | 该答 5 / 该拒 6 / 部分答 4 |
-| 行为准确 | **14/15** |
-| 误拒 | **1/15**（相关但缺电话号码时整句拒答） |
-| 幻觉 | **0/15**（噪音检索下未把无关金额 / 名额套到问题上） |
+| 题型 | 该答 10 / 部分答 10 / 该拒 10 |
+| 行为准确 | **27/30** |
+| 误拒 | **3/30**（心理电话、转专业名额、宿舍房型等「有制度缺精确字段」时整句拒答） |
+| 幻觉 | **0/30**（该拒题未编造价格 / 时刻 / 网址等） |
 
 金标与跑分：`evaluation/refusal_gold.json`、`evaluation/eval_refusal.py`。完整过程与逐题分析见 [docs/evaluation_report.md](./docs/evaluation_report.md)。
 
@@ -116,7 +116,7 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 | 前端 | Streamlit、httpx |
 | API | FastAPI、Uvicorn、Pydantic |
 | RAG | ChromaDB、LangChain LCEL、Recursive 切块、BGE Embedding、rank_bm25、jieba、bge-reranker、DeepSeek |
-| 评估 | Ragas、自建 `ground_truth.json`（15 题）、拒答行为集 `refusal_gold.json`（15 题） |
+| 评估 | Ragas、自建 `ground_truth.json`（50 题）、拒答行为集 `refusal_gold.json`（30 题） |
 | 数据 / 安全 | MySQL、SQLAlchemy、Redis、JWT（附录能力） |
 | 工程 | python-dotenv、pytest |
 
@@ -132,8 +132,8 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 | **切块** | Naive / Character / Recursive，以及 128 / 256 / 512 | Recursive 更利于保留条款边界；当前采用 chunk_size=256、overlap=50 |
 | **混合检索** | Dense vs Hybrid（向量 + BM25 + RRF） | Hybrid 稳住关键字侧；问题逐渐变成「候选对了但排序不理想」 |
 | **Rerank** | Hybrid Top10 → 精排 Top3，探针看位次变化 | 精排接进生产检索链路，职责是重排，不扩大召回 |
-| **Ragas** | 15 题，有无 Rerank 四指标对照 | Precision 提升明显；Recall 不变；Faithfulness / Relevancy 略升 |
-| **拒答小金标** | 15 题：该答 / 该拒 / 部分答，人工记误拒与幻觉 | 行为准确 14/15；误拒 1、幻觉 0；短板是缺细节时偶发过拒 |
+| **Ragas** | 50 题，有无 Rerank 四指标对照 | 四项均提升；Precision +0.06，Recall +0.14，Relevancy +0.18 |
+| **拒答小金标** | 30 题：该答 10 / 部分答 10 / 该拒 10，人工记误拒与幻觉 | 行为准确 27/30；误拒 3、幻觉 0；短板是缺细节时过拒 |
 
 ---
 
@@ -230,10 +230,11 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 
 ## 当前不足
 
-- 评估集目前各 15 题（Ragas / 拒答），结论不宜外推到全部规章问答  
-- 部分题目 Context Recall 为 0：所需段落可能未进入 Hybrid Top10，Rerank 帮不上，需要回头查切块、分词或初筛  
-- 拒答回归里仍有 1 题误拒：有相关流程但缺精确字段（如求助电话）时，模型会整句拒答，偏「过拒」  
+- 评估集现为 Ragas 50 题 / 拒答 30 题，结论仍不宜外推到全部规章问答  
+- 仍有题目两边 Context Recall 为 0：所需段落可能未进入 Hybrid Top10，Rerank 帮不上，需要回头查切块、分词或初筛  
+- 拒答回归里仍有 3 题误拒：有相关制度但缺精确字段（电话 / 名额 / 宿舍房型）时，模型会整句拒答，偏「过拒」  
 - Rerank 依赖外部 API，会增加延迟与对密钥/网络的依赖  
+
 
 
 ---
