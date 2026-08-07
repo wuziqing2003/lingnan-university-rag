@@ -47,3 +47,10 @@ SiliconFlow_API_KEY = os.getenv("SiliconFlow_API_KEY")
 if not SiliconFlow_API_KEY:
     logging.error("Config load failed! SiliconFlow_API_KEY is missing")
     raise ValueError("SiliconFlow_API_KEY 缺失")
+
+TAVILY_URL = "https://api.tavily.com/search"
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+if not TAVILY_API_KEY:
+    logging.error("Config load failed! TAVILY_API_KEY is missing")
+    raise ValueError("TAVILY_API_KEY 缺失")
+
