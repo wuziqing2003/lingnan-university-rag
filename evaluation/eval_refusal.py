@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from evaluation.eval_with_ragas import get_contexts, get_answer
+from evaluation.eval_with_ragas import get_contexts, get_answer,_text
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLD_PATH = ROOT / "evaluation" / "refusal_gold.json"
@@ -32,7 +32,7 @@ def main():
     for item in items:
         q = item["question"]
         ctx = get_contexts(q, args.mode)
-        ans = get_answer(q, ctx)
+        ans = get_answer(q, _text(ctx))
 
         print(f"\n[{item['id']}] expect={item['expect']}")
         print(f"Q: {q}")

@@ -25,12 +25,23 @@ answer_relevancy.strictness = 1
 ROOT = Path(__file__).resolve().parents[1]
 GT_PATH = ROOT / "evaluation" / "ground_truth.json"
 
+def _text(hits: list) -> str:
+    out = []
+    for h in hits or []:
+        if isinstance(h,dict):
+            out.append((h.get("text") or "").strip())
+        else:
+            out.append(str(h).strip())
+    return [t for t in out if t]
+
 
 def get_contexts(question: str, mode: str) -> list[str]:
     candidates = hybrid_search(question, n_results=10)
     if mode == "rerank":
-        return rerank_documents(question, candidates, top_n=3)
-    return candidates[:3]
+        hits = rerank_documents(question, candidates, top_n=3)
+    else:
+        hits = candidates[:3]
+    return _text(hits)
 
 
 def get_answer(question: str, contexts: list[str]) -> str:

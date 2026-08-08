@@ -1,11 +1,11 @@
 {
   "mode": "no_rerank",
-  "n": 15,
-  "time": "2026-07-24T11:42:23",
+  "n": 50,
+  "time": "2026-08-04T21:47:59",
   "scores": {
-    "context_precision": 0.6722222221680556,
-    "faithfulness": 0.9592592592592593,
-    "answer_relevancy": 0.82945963314082,
-    "context_recall": 0.8333333333333334
+    "context_precision": 0.729591836672534,
+    "faithfulness": 0.8567720652813533,
+    "answer_relevancy": 0.6472085752145795,
+    "context_recall": 0.7433333333333333
   }
 }
