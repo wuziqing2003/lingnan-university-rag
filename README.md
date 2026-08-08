@@ -110,9 +110,17 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 
 ### 运行截图
 
-**Streamlit「教务规章助手」（答案 + 知识库/联网来源）**
+**1. 知识库问答（保留入学资格 · 附 PDF 来源/页码）**
 
-![Streamlit 问答演示：流式回答并展示来源](./image/streamlit.png)
+![校内规章问答：保留入学资格与 PDF 出处](./image/demo_rag_admission.png)
+
+
+
+![校内规章问答：本研分情形与表格展示](./image/demo_rag_undergrad.png)
+
+**2. 联网搜索（公开资讯 · 附网页标题与链接）**
+
+![Agent 联网检索：高校人工智能人才培养相关公开新闻](./image/demo_web_search.png)
 
 **FastAPI Swagger（/docs）**
 
