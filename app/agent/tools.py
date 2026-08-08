@@ -12,7 +12,7 @@ def _hits_to_sources(hits: list[dict]) -> list[dict]:
         {
             "source": h.get("source", "未知"),
             "page": h.get("page"),
-            "snippet": (h.get("text") or "")[:200],
+            "snippet": (h.get("text") or "")[:100],
         }
         for h in (hits or [])
     ]
@@ -20,9 +20,9 @@ def _hits_to_sources(hits: list[dict]) -> list[dict]:
 def web_to_sources(results:list[dict])->list[dict]:
     return [
         {
-            "source":r.get("url") or r.get("title") or "未知来源",
-            "page":None,
-            "snippet":(r.get("content") or "")[:200],
+            "source":r.get("title") or "未知来源",
+            "url":r.get("url") or "",
+            "page": None,
         }
         for r in (results or [])
     ]
@@ -41,7 +41,15 @@ def _run_web_search(query:str)->str:
     q = (query or "").strip()
     if not q:
         return _pack("请提供具体问题或关键词。")
-    results = search_web(q)
+    try:
+
+        results = search_web(q)
+    except Exception:
+        return _pack(
+            "【工具暂时不可用】网络搜索失败或超时。"
+            "请勿编造检索结果；若问题不依赖网页，可说明限制并谨慎作答；"
+            "若是校内规章，仍不得用常识冒充条文。"
+        )
     if not results:
         return _pack("未检索到相关资料。"
         "说明：网络搜索没有找到与问题足够相关的信息；"

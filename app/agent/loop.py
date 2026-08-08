@@ -10,6 +10,7 @@ from langchain_core.messages import (
 from langchain_openai import ChatOpenAI
 from app.agent.tools import TOOL_MAP, TOOLS
 from app.core.config import DEEPSEEK_API_KEY
+from app.agent.tools import _pack
 
 SYSTEM_PROMPT = """你是岭南师范学院规章与信息公开问答助手。
 你只能依据工具返回的资料回答，不得使用训练知识或常识补全校内规定。
@@ -119,7 +120,14 @@ async def stream_agent(user_text: str, max_rounds: int = 5)-> AsyncIterator[str]
                         }
                     )
                     tool_fn = TOOL_MAP[tc["name"]]
-                    raw = await tool_fn.ainvoke(tc["args"])
+                    try:
+                        raw = await tool_fn.ainvoke(tc["args"])
+                    except Exception as e:
+                        raw = _pack(
+                            f"【工具暂时不可用】{tc['name']} 调用失败：{e}。"
+                            "请基于已有信息作答或说明无法完成检索，不要假装已经搜到了内容。"
+                        )
+                        
                     content, sources = _parse_tool_payload(raw)
                     messages.append(
                         ToolMessage(content=content, tool_call_id=tc["id"])
