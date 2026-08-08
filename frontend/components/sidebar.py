@@ -1,15 +1,13 @@
 import streamlit as st
 
 from frontend.api.client import check_backend
-from frontend.config import BADGE_PATH, EXAMPLE_QUESTIONS
+from frontend.config import EXAMPLE_QUESTIONS
 
 
 def render_sidebar() -> None:
     with st.sidebar:
-        if BADGE_PATH.exists():
-            st.image(str(BADGE_PATH), width=96)
-        st.markdown("### 岭南师范学院")
-        st.caption("教务智能问答 · v1.0")
+        st.markdown("### 教务规章助手")
+        st.caption("岭南师范学院 · 知识库 + 联网")
 
         backend_ok = check_backend()
         if backend_ok:
@@ -37,4 +35,7 @@ def render_sidebar() -> None:
             st.session_state.pop("pending_question", None)
             st.rerun()
 
-        st.caption("仅依据校内规章制度检索作答；知识库未覆盖时会如实告知。")
+        st.caption(
+            "校内规定走知识库；公开/时效信息可联网检索并附链接。"
+            "资料不足时如实说明，不编造。个人项目，非学校官方渠道。"
+        )

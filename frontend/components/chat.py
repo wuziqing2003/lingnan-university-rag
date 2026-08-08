@@ -4,19 +4,29 @@ import httpx
 import streamlit as st
 
 from frontend.api.client import stream_from_backend
-from frontend.config import BADGE_PATH
+
+def _format_source_caption(s: dict) -> str:
+    name = s.get("source") or "未知"
+    url = (s.get("url") or "").strip()
+    if url:
+        # 联网：标题 + 链接
+        return f"来源：[{name}]({url})"
+    page = s.get("page")
+    page_s = f" p.{page}" if page is not None else ""
+
+    return f"来源：{name}{page_s}"
 
 
 def render_chat() -> None:
-    if BADGE_PATH.exists():
-        st.logo(str(BADGE_PATH), size="large")
-
     st.markdown(
-        '<p class="brand-title">教务智能问答</p>',
+        '<p class="brand-title">教务规章助手</p>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<p class="brand-sub">检索校内公开规章与教务资料，流式返回答复。无依据不编造。</p>',
+        '<p class="brand-sub">'
+        "Agent 检索校内公开规章，必要时联网查询公开信息并标注来源；"
+        "流式返回答复，无依据不编造。"
+        "</p>",
         unsafe_allow_html=True,
     )
 
@@ -27,12 +37,10 @@ def render_chat() -> None:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             for s in message.get("sources") or []:
-                page = s.get("page")
-                page_s = f" p.{page}" if page is not None else ""
-                st.caption(f"来源：{s.get('source', '未知')}{page_s}")
+                st.caption(_format_source_caption(s))
 
     pending = st.session_state.pop("pending_question", None)
-    typed = st.chat_input("输入教务、资助、学籍等相关问题…")
+    typed = st.chat_input("输入学籍、资助等校内规定，或需要联网的公开资讯问题…")
     prompt = pending or typed
 
     if prompt:
@@ -52,9 +60,7 @@ def render_chat() -> None:
                 if result.error:
                     st.warning(result.error)
                 for s in result.sources:
-                    page = s.get("page")
-                    page_s = f" p.{page}" if page is not None else ""
-                    st.caption(f"来源：{s.get('source', '未知')}{page_s}")
+                    st.caption(_format_source_caption(s))
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
