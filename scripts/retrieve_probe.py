@@ -1,9 +1,14 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from app.rag.chain import get_embedding
 from app.rag.hybrid import hybrid_search
 from app.rag.rerank import rerank_documents
 from scripts.ingest_pdfs import CHROMA_PATH, COLLECTION_NAME
-import chromadb
 
+import chromadb
+from app.rag.rewrite import rewrite_query
 
 def probe_dense(question:str,n_results=3):
     chroma = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -72,22 +77,13 @@ def compare_hybrid_vs_rerank(question: str, gold_keywords: list[str]):
 
 
 if __name__ == "__main__":
- cases = [
-    ("本科生勤工助学怎么申请？", ["勤工助学"]),
-    ("普通全日制本科生转专业需要什么条件？", ["转专业"]),
-    ("新生可以申请保留入学资格吗？期限多久？", ["保留入学资格"]),
-    ("缓考怎么申请？", ["缓考"]),
-    ("教学事故怎么认定？", ["教学事故"]),
-]
-for q, gold in cases:
-    compare_hybrid_vs_rerank(q, gold)
-   
 
 
 
 
-
-
+    q = "助学金怎么领？"
+    print("原问:", q)
+    print("改写:", rewrite_query(q))
 
 
 

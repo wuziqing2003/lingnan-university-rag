@@ -26,14 +26,15 @@ embed_client = OpenAI(
 # 第二步是将PDF中的内容按页码存储到列表里
 ##第三步是用换行符把各页文字拼成一个大字符串，去掉首尾空白
 def extract_text(pdf_path:Path):
-    doc = fitz.open(pdf_path)
-    pages = []
-    for i,page in enumerate(doc,1):
-        text = (page.get_text() or "").strip()
-        if text:
-            pages.append((i,text))
-    doc.close()
+    pages: list[tuple[int,str]] = []
+    with fitz.open(pdf_path) as doc:
+        for page,text in enumerate(doc,start=1):
+            text  = (text.get_text() or "").strip()
+            if text:
+                pages.append((page,text))
     return pages
+            
+    
 
 ###对文字进行切块
 def chunk_text(text:str ,chunk_size:int=CHUNK_SIZE ):

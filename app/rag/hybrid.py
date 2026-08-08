@@ -53,61 +53,20 @@ def get_collection():
 def build_bm25_index(force:bool=False):
 ##定义四个全局变量
     global _bm25, _ids, _docs, _id_to_doc,_id_to_meta
-
-##判断BM25倒排索引是否已经存在
     if _bm25 is not None and not force:
         return
-# Chroma 稠密向量集合
     collection = get_collection()
-##在collection里面拿到两个列表
     data = collection.get(include=["documents","metadatas"])
-#一个存放着每个chunk的ID
     _ids = data["ids"] or []
-#一个存放着每个chunk的原文
     _docs = data["documents"] or []
-
     metas = data["metadatas"] or []
-#判断这两个是否为空
     if not _ids or not _docs:
          raise RuntimeError("Chroma 集合为空，请先运行 scripts/ingest_pdfs.py 入库")
-##将原文的内容进行分词
     tokenized = [tokenize(doc) for doc in _docs]
-##计算分词后每个词的出现率，出现率越少分越高
     _bm25 = BM25Okapi(tokenized)
-
     _id_to_doc = dict(zip(_ids,_docs))
     _id_to_meta = dict(zip(_ids,metas))
-# # 这是 _bm25 对象内部的核心数据结构（简化还原）
-# _bm25 = {
-#     # 1. 原始词渣列表（留着备用，用于算词频）
-#     "corpus": [
-#         ['国家', '奖学金', '每生', '每年', '10000', '元'],  # doc_0
-#         ['国家', '励志', '奖学金', '每生', '每年', '6000', '元'], # doc_1
-#         ['国家', '助学金', '平均', '每生', '每年', '3700', '元'] # doc_2
-#     ],
-    
-#     # 2. 每篇文档的长度（词的数量）
-#     "doc_len": [6, 7, 7],  # doc_0有6个词，doc_1有7个词，doc_2有7个词
-    
-#     # 3. 所有文档的平均长度
-#     "avgdl": 6.67,  # (6+7+7)/3 ≈ 6.67
 
-#     # 4. 🔥 最核心的 IDF（逆文档频率）词典
-#     # 记录每一个“词”在多少篇文档里出现过（文档频率 DF）
-#     "idf": {
-#         '国家': 0.0,      # 3篇文档都有 -> log(3/3)=0 -> 这个词毫无区分度（常见词）
-#         '奖学金': 0.405,  # 2篇有（doc_0, doc_1）-> log(3/2)=0.405
-#         '每生': 0.0,      # 3篇都有 -> 区分度为0（没啥用）
-#         '每年': 0.0,      # 3篇都有 -> 区分度为0
-#         '10000': 1.099,  # 仅1篇有（doc_0）-> log(3/1)=1.099（权重极高！）
-#         '元': 0.0,        # 3篇都有 -> 区分度为0
-#         '励志': 1.099,    # 仅1篇有（doc_1）-> 权重极高
-#         '6000': 1.099,    # 仅1篇有（doc_1）
-#         '助学金': 1.099,  # 仅1篇有（doc_2）-> 能完美区分doc_2
-#         '平均': 1.099,    # 仅1篇有（doc_2）
-#         '3700': 1.099,    # 仅1篇有（doc_2）
-#     }
-# }
 ###根据向量排名
 def dense_rank(question,n=CANDIDATE_N):
 ##打开仓库
