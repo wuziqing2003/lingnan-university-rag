@@ -1,5 +1,5 @@
 import streamlit as st
-
+from frontend.config import DEMO_SESSION_LIMIT
 from frontend.api.client import check_backend
 from frontend.config import EXAMPLE_QUESTIONS
 
@@ -21,6 +21,10 @@ def render_sidebar() -> None:
                 unsafe_allow_html=True,
             )
             st.caption("请先启动：`python -m app.main`")
+        used = st.session_state.get("demo_used", 0)
+        remain = max(DEMO_SESSION_LIMIT - used, 0)
+
+        st.caption(f"本会话剩余演示次数：{remain}/{DEMO_SESSION_LIMIT}")
 
         st.divider()
         st.markdown("**试试这些问题**")

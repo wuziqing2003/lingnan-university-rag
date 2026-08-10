@@ -28,6 +28,9 @@ services:
       timeout: 5s
       retries: 5
   backend:
+    build:
+      context: ../
+      dockerfile: Dockerfile
     image: lingnan-rag-backend:v1
     restart: unless-stopped
     ports:
@@ -46,6 +49,22 @@ services:
         condition: service_started
     networks:
       - backend
+  frontend:
+    build:
+      context: ../
+      dockerfile: Dockerfile.frontend
+    image: lingnan-rag-frontend:v1
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE: http://backend:8000
+      DEMO_SESSION_LIMIT: ${DEMO_SESSION_LIMIT:-5}
+    depends_on:
+    - backend
+    networks:
+      - backend
+ 
 networks:
   backend:
 

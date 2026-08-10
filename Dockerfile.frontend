@@ -1,0 +1,18 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir -U pip\
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com 
+COPY requirements-frontend.txt .
+RUN pip install --no-cache-dir -r requirements-frontend.txt\
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com 
+COPY main.py .
+COPY frontend ./frontend
+COPY image ./image
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "main.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--browser.gatherUsageStats", "false"]

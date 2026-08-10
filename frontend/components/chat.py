@@ -2,7 +2,7 @@ import logging
 
 import httpx
 import streamlit as st
-
+from frontend.config import DEMO_SESSION_LIMIT
 from frontend.api.client import stream_from_backend
 
 def _format_source_caption(s: dict) -> str:
@@ -32,6 +32,10 @@ def render_chat() -> None:
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "demo_used" not in st.session_state:
+        st.session_state.demo_used = 0
+    remain = max(DEMO_SESSION_LIMIT - st.session_state.demo_used, 0)
+    st.caption(f"演示额度：本会话剩余 {remain}/{DEMO_SESSION_LIMIT} 次")
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -44,6 +48,12 @@ def render_chat() -> None:
     prompt = pending or typed
 
     if prompt:
+        if st.session_state.demo_used >= DEMO_SESSION_LIMIT:
+            st.warning("本会话演示次数已用完。")
+            return 
+        st.session_state.demo_used += 1
+        
+        
        
 
         logging.info("用户提问: %s", prompt[:50])
@@ -70,6 +80,7 @@ def render_chat() -> None:
                 )
               
                 logging.info("回答内容: %s", full_response[:50])
+                st.rerun()
                             
                 
                 

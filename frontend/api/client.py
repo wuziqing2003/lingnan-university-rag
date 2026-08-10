@@ -36,6 +36,15 @@ def stream_from_backend(question: str):
                 json={"question": question},
                 headers={"Accept": "application/x-ndjson"},
             ) as response:
+                if response.status_code == 429:
+                    try:
+                        data = response.json()
+                        msg = data.get("detail") or "演示额度已用完，请稍后再试。"
+                    except Exception:
+                        msg = "演示额度已用完，请稍后再试。"
+                    result.error = msg
+                    yield f"\n\n（错误：{msg}）"
+                    return
                 response.raise_for_status()
                 for chunk in response.iter_text():
                     if not chunk:

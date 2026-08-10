@@ -1,11 +1,12 @@
 import redis
-from app.core.config import REDIS_HOST,REDIS_PORT
+from app.core.config import REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
 
 redis_client = redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
+    password=REDIS_PASSWORD,
     db=0,
     decode_responses=True,
-    protocol=2
+    protocol=2,
 )
 

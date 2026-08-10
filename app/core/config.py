@@ -39,8 +39,12 @@ if not SECRET_KEY:
     raise ValueError("SECRET_KEY 缺失")
 
 
-REDIS_HOST=os.getenv("REDIS_HOST")
-REDIS_PORT=int(os.getenv("REDIS_PORT"))
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
+DEMO_IP_HOURLY_LIMIT = int(os.getenv("DEMO_IP_HOURLY_LIMIT", "5"))
+DEMO_IP_DAILY_LIMIT = int(os.getenv("DEMO_IP_DAILY_LIMIT", "7"))
+DEMO_GLOBAL_DAILY_LIMIT = int(os.getenv("DEMO_GLOBAL_DAILY_LIMIT", "50"))
 
 
 SiliconFlow_API_KEY = os.getenv("SiliconFlow_API_KEY")
