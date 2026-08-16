@@ -12,5 +12,9 @@ async def agent_stream(body: AgentRequest,request:Request):
     check_demo_rate_limit(ip)
     return StreamingResponse(
         stream_agent(body.question),
-        media_type="application/x-ndjson; charset=utf-8",
+        media_type="text/event-stream; charset=utf-8",
+        headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    },
     )

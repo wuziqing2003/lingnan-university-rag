@@ -9,3 +9,5 @@ chroma_db/
 *.pyc
 playground/_*.json
 playground/_*.txt
+data/
+playground/docker/.env

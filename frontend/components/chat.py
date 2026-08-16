@@ -16,6 +16,25 @@ def _format_source_caption(s: dict) -> str:
 
     return f"来源：{name}{page_s}"
 
+def _format_steps(steps: list) -> str:
+    lines = []
+    for s in steps:
+        if s.get("kind") == "action":
+            name = s.get("name") or "工具"
+            args = s.get("args") or {}
+            query = args.get("query") if isinstance(args, dict) else args
+            lines.append(f"**调用工具** `{name}`  \n参数：{query}")
+        elif s.get("kind") == "observation":
+            lines.append(f"**工具返回结果**  \n{s.get('content') or ''}")
+    return "\n\n".join(lines)
+
+def _render_assistant_body(content: str, steps: list | None, sources: list | None) -> None:
+    if steps:
+        st.caption(_format_steps(steps))
+    if content:
+        st.markdown(content)
+    for s in sources or []:
+        st.caption(_format_source_caption(s))
 
 def render_chat() -> None:
     st.markdown(
@@ -39,9 +58,15 @@ def render_chat() -> None:
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            for s in message.get("sources") or []:
-                st.caption(_format_source_caption(s))
+            if message["role"] == "assistant":
+                _render_assistant_body(
+                    message.get("content") or "",
+                    message.get("steps") or [],
+                    message.get("sources") or [],
+                )
+            else:
+                st.markdown(message["content"])
+            
 
     pending = st.session_state.pop("pending_question", None)
     typed = st.chat_input("输入学籍、资助等校内规定，或需要联网的公开资讯问题…")
@@ -63,10 +88,23 @@ def render_chat() -> None:
 
         with st.chat_message("assistant"):
             try:
+                thought_box = st.empty()   # 先创建 → 在上面
+                answer_box = st.empty()
                 gen,result = stream_from_backend(prompt)
-                full_response = st.write_stream(gen)
-                if not full_response:
-                    full_response = ""
+                full_response = ""
+                cleared_for_tools = False
+                for delta in gen:
+                    if result.steps:
+                        thought_box.caption(_format_steps(result.steps))
+                        if not cleared_for_tools:
+                            full_response = ""
+                            answer_box.markdown("")
+                            cleared_for_tools = True
+
+                    if delta:
+                        full_response += delta
+                        answer_box.markdown(full_response)
+           
                 if result.error:
                     st.warning(result.error)
                 for s in result.sources:
@@ -76,6 +114,7 @@ def render_chat() -> None:
                         "role": "assistant",
                         "content": full_response,
                         "sources": result.sources,
+                        "steps": result.steps
                     }
                 )
               

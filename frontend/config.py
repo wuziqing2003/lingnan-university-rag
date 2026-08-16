@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+
 API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000")
 CHAT_URL = f"{API_BASE}/agent/stream"
 HEALTH_URL = f"{API_BASE}/health"

@@ -1,0 +1,5 @@
+-r requirements.txt
+-r requirements-frontend.txt
+pytest==9.1.1
+ragas==0.4.3
+datasets==5.0.1

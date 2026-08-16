@@ -1,6 +1,7 @@
 from dataclasses import dataclass,field
 import httpx
 import json
+
 from frontend.config import CHAT_URL, HEALTH_URL
 SOURCE_SEP = "\n\n<!--SOURCES-->\n"
 
@@ -9,8 +10,22 @@ SOURCE_SEP = "\n\n<!--SOURCES-->\n"
 class StreamResult:
     sources:list = field(default_factory=list)
     error : str | None = None
+    steps : list | None = field(default_factory=list)
 
-
+def _parse_sse_frame(frame:str):
+    event_name = None
+    data_lines = []
+    for raw in frame.split("\n"):
+        line = raw.rstrip("\r")
+        if line.startswith("event:"):
+            event_name = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    raw_data = "\n".join(data_lines).strip()
+    payload = json.loads(raw_data) if raw_data else {}
+    return event_name,payload
+        
+        
 
 
 
@@ -34,7 +49,7 @@ def stream_from_backend(question: str):
                 "POST",
                 CHAT_URL,
                 json={"question": question},
-                headers={"Accept": "application/x-ndjson"},
+                headers={"Accept": "text/event-stream"},
             ) as response:
                 if response.status_code == 429:
                     try:
@@ -50,26 +65,44 @@ def stream_from_backend(question: str):
                     if not chunk:
                         continue
                     buf += chunk
-                    while "\n" in buf:
-                        line, buf = buf.split("\n", 1)
-                        line = line.strip()
-                        if not line:
+                    while "\n\n" in buf:
+                        frame, buf = buf.split("\n\n", 1)
+                        frame = frame.strip()
+                        if not frame:
                             continue
                         try:
-                            event = json.loads(line)
+                            et,data = _parse_sse_frame(frame)
                         except json.JSONDecodeError:
                             continue
-                        et = event.get("type")
+                        
                         if et == "token":
-                            delta = event.get("delta") or ""
+                            delta = data.get("delta") or ""
                             if delta:
                                 yield delta
+                        elif et == "action":
+                            result.steps.append(
+                                {
+                                    "kind": "action",
+                                    "name": data.get("name") or "",
+                                    "args": data.get("args") or {},
+                                }
+                            )
+                            yield ""
+                        elif et == "observation":
+                            result.steps.append(
+                                {
+                                    "kind": "observation",
+                                    "name": data.get("name") or "",
+                                    "content": data.get("content") or "",
+                                }
+                            )
+                            yield ""
                         elif et == "sources":
-                            items = event.get("items") or []
+                            items = data.get("items") or []
                             if items:
                                 result.sources = items
                         elif et == "error":
-                            result.error = event.get("message") or "未知错误"
+                            result.error = data.get("message") or "未知错误"
                         elif et == "done":
                             return
         if result.error:

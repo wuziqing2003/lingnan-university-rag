@@ -188,7 +188,9 @@ lingnan-university-rag/
 ├── playground/             # 早期检索/切块等实验脚本（非主线，可不看）
 ├── tests/
 ├── image/                  # README 用架构图、Swagger / Streamlit 截图等
-├── requirements.txt
+├── requirements.txt            # 后端 / Docker API 运行时
+├── requirements-frontend.txt   # Streamlit 前端
+├── requirements-dev.txt        # 本地全量：后端 + 前端 + 测试/评估
 ├── .env.example
 └── README.md
 ```
@@ -203,6 +205,8 @@ lingnan-university-rag/
 
 ### 1. 环境
 
+需要 **Python ≥ 3.10**。
+
 ```bash
 git clone https://github.com/wuziqing2003/lingnan-university-rag.git
 cd lingnan-university-rag
@@ -213,9 +217,11 @@ Windows:
 
 ```bash
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 copy .env.example .env
 ```
+
+Docker 后端镜像只装运行时：`pip install -r requirements.txt`；前端镜像：`pip install -r requirements-frontend.txt`。
 
 在 `.env` 中填写 `DEEPSEEK_API_KEY`、`SiliconFlow_API_KEY`、`TAVILY_API_KEY`、`DB_*`、`SECRET_KEY`、`REDIS_*` 等（**不要提交 `.env`**）。
 
