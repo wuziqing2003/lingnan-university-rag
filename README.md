@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![RAG](https://img.shields.io/badge/RAG-Hybrid%20%2B%20Rerank-orange.svg)](https://www.langchain.com/)
-[![Agent](https://img.shields.io/badge/Agent-Tools%20%2B%20Loop-green.svg)](https://python.langchain.com/)
+[![Agent](https://img.shields.io/badge/Agent-Tools%20%2B%20LangGraph-green.svg)](https://langchain-ai.github.io/langgraph/)
 [![Eval](https://img.shields.io/badge/Eval-Ragas-purple.svg)](https://github.com/explodinggradients/ragas)
 
 ---
@@ -13,10 +13,10 @@
 ## 项目亮点
 
 1. **检索链路完整**：PDF 按页入库 → Recursive 切块 → BGE Embedding → Chroma → Query 改写 → Hybrid（向量 + BM25 + RRF）→ `bge-reranker-v2-m3` 精排 → 流式生成，并回传来源页码  
-2. **Agent 多工具调度**：`POST /agent/stream` 上跑工具循环；校内规定优先 `search_lingnan_knowledge_base`，公开/时效问题可调用 `search_web_messages`（Tavily），Prompt 约束联网结果不能冒充官方规章  
+2. **Agent 多工具调度**：`POST /agent/stream` 上跑工具循环（默认 `LegacyRunner`，`AGENT_RUNNER=graph` 可切 LangGraph：think → act → observe）；校内规定优先 `search_lingnan_knowledge_base`，公开/时效问题可调用 `search_web_messages`（Tavily），Prompt 约束联网结果不能冒充官方规章  
 3. **有对照实验，不只调通**：用 **50** 道自建题 + Ragas，对比有无 Rerank；四项指标均提升，Context Precision 约 **0.73 → 0.79**，Answer Relevancy 约 **0.65 → 0.83**  
 4. **拒答行为有回归集**：另建 **30** 题（该答 10 / 部分答 10 / 该拒 10），人工记误拒与幻觉；当前 **误拒 3、幻觉 0**，不单凭感觉调 Prompt  
-5. **前后端可演示**：Streamlit「教务规章助手」通过 `httpx` 调用 `POST /agent/stream`（NDJSON 流）；校内来源展示 PDF 名/页码，联网来源展示标题与链接；资料不足时如实说明、不编造
+5. **前后端可演示**：Streamlit「教务规章助手」通过 `httpx` 解析 **SSE**（`token` / `action` / `observation` / `sources` / `done`）；校内来源展示 PDF 名/页码，联网来源展示标题与链接；工具步骤可展开；资料不足时如实说明、不编造。演示接口按 IP / 全站做 Redis 计数限流，超额返回 **429**
 
 ### Ragas 评估结果（50 题）
 
@@ -50,7 +50,7 @@
 - **公开/时效资讯**：可调用 `search_web_messages`（Tavily），须标明来自网页、不得冒充官方规章  
 - **资料不足**：明确拒答或说明边界，不编造  
 
-本地 MVP：后端负责 Agent 循环与流式生成，前端负责对话与来源展示。完整规章 PDF **未公开收录**（体积与版权）；本地复现可自备同类 PDF 后按下方脚本入库。
+本地 MVP：后端负责 Agent 循环与 SSE 流式生成，前端负责对话、工具步骤与来源展示。完整规章 PDF **未公开收录**（体积与版权）；本地复现可自备同类 PDF 后按下方脚本入库。
 
 ---
 
@@ -66,9 +66,10 @@
 
 ```text
 用户（Streamlit）
-    │  httpx stream  POST /agent/stream
+    │  httpx SSE  POST /agent/stream
     ▼
-FastAPI  agent router → stream_agent（工具循环，NDJSON）
+FastAPI  agent router（Redis 限流）→ run()
+    │  默认 LegacyRunner；AGENT_RUNNER=graph 时走 LangGraph
     │
     ├─ 工具 search_lingnan_knowledge_base
     │     Query 改写 → Hybrid（向量 + BM25 + RRF）→ Rerank → Top3
@@ -77,12 +78,12 @@ FastAPI  agent router → stream_agent（工具循环，NDJSON）
     └─ 工具 search_web_messages（可选）
           Tavily Search → 摘要供模型阅读；sources 仅标题 + URL
     ▼
-DeepSeek（bind_tools）流式输出 token / tool_call / tool_result / sources / done
+SSE 事件：thought / action / observation / token / sources / error / done
     ▼
-前端「教务规章助手」：流式展示答案 → 解析 sources（PDF 或网页链接）
+前端「教务规章助手」：流式展示答案与工具步骤 → 解析 sources（PDF 或网页链接）
 ```
 
-**兼容路径：** `POST /chat/stream` 仍保留纯 RAG 链式问答（不经 Agent 工具循环），便于对照与评测脚本复用。
+**兼容路径：** `POST /chat/stream` 仍保留纯 RAG 链式问答（不经 Agent 工具循环，`text/plain` 流式文本 + 末尾来源 JSON），便于对照与评测脚本复用。
 
 **离线入库（一次构建知识库）：**
 
@@ -101,12 +102,13 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 | **Query 改写** | 检索前改写用户问题，提升召回稳定性 |
 | **混合检索** | 稠密向量 + `rank_bm25`，RRF 融合；中文分词用 jieba |
 | **二次精排** | Hybrid Top10 → `bge-reranker-v2-m3` → Top3 |
-| **Agent 工具循环** | LangChain `bind_tools` + 多轮 tool_call；知识库 / 联网分流 |
+| **Agent 工具循环** | LangChain `bind_tools` + 多轮 tool_call；知识库 / 联网分流。默认 `LegacyRunner`，可切 LangGraph（`think` → `act` → `observe`） |
 | **联网搜索** | Tavily HTTP 检索，封装为 `search_web_messages`；校规结论仍以知识库为准 |
-| **流式接口** | `POST /agent/stream`（主）与 `POST /chat/stream`（兼容），NDJSON：token / sources / done |
-| **可溯源展示** | 知识库：PDF 名 + 页码；联网：标题 + 可点击链接 |
+| **SSE 流式** | `POST /agent/stream`：`text/event-stream`（token / thought / action / observation / sources / error / done） |
+| **演示限流** | Redis `INCR` + TTL：按 IP 小时/日、全站日限额；超额 **429** |
+| **可溯源展示** | 知识库：PDF 名 + 页码；联网：标题 + 可点击链接；前端展示工具步骤 |
 | **对照实验** | 切块 / Hybrid / Rerank / Ragas / 拒答小金标，见 `docs/` 与 `evaluation/` |
-| **附带能力** | FastAPI 分层、JWT 登录、MySQL、Redis 缓存（非主线，见[附录](#附录用户接口请求生命周期)） |
+| **附带能力** | FastAPI 分层、JWT 登录、MySQL、用户接口 Redis 缓存（非主线，见[附录](#附录用户接口请求生命周期)） |
 
 ### 运行截图
 
@@ -132,14 +134,14 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Streamlit、httpx |
+| 前端 | Streamlit、httpx（SSE 客户端） |
 | API | FastAPI、Uvicorn、Pydantic |
-| Agent | LangChain tools、`bind_tools`、多轮 ToolMessage 循环、DeepSeek |
+| Agent | LangChain tools、`bind_tools`、`LegacyRunner` / LangGraph、DeepSeek |
 | RAG | ChromaDB、LangChain、Recursive 切块、BGE Embedding、rank_bm25、jieba、bge-reranker、Query 改写 |
 | 联网 | Tavily Search API、httpx |
 | 评估 | Ragas、自建 `ground_truth.json`（50 题）、拒答行为集 `refusal_gold.json`（30 题） |
-| 数据 / 安全 | MySQL、SQLAlchemy、Redis、JWT（附录能力） |
-| 工程 | python-dotenv、pytest |
+| 数据 / 安全 | MySQL、SQLAlchemy、Redis（限流 + 用户缓存）、JWT |
+| 工程 | python-dotenv、pytest、Docker Compose |
 
 ---
 
@@ -156,7 +158,7 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 | **Ragas** | 50 题，有无 Rerank 四指标对照 | 四项均提升；Precision +0.06，Recall +0.14，Relevancy +0.18 |
 | **拒答小金标** | 30 题：该答 10 / 部分答 10 / 该拒 10，人工记误拒与幻觉 | 行为准确 27/30；误拒 3、幻觉 0；短板是缺细节时过拒 |
 
-> 说明：上表评估主要针对 **知识库 RAG 链路**（检索质量与拒答行为）。Agent + 联网工具为后续能力扩展，尚未单独做与 Ragas 同规模的对照评测。
+> 说明：上表评估主要针对 **知识库 RAG 链路**（检索质量与拒答行为）。Agent + 联网工具是线上主路径，尚未单独做与 Ragas 同规模的对照评测。
 
 ---
 
@@ -166,14 +168,18 @@ data/pdfs → 按页抽文本 → Recursive 切块(256/50) → BGE Embedding
 lingnan-university-rag/
 ├── main.py                 # Streamlit「教务规章助手」入口
 ├── frontend/               # 前端（默认请求 /agent/stream）
-│   ├── components/         # 侧栏 / 对话
-│   ├── api/                # httpx NDJSON 客户端
+│   ├── components/         # 侧栏 / 对话（工具步骤 + 来源）
+│   ├── api/                # httpx SSE 客户端
 │   └── config.py           # 示例问题等
 ├── app/                    # FastAPI 后端
-│   ├── agent/              # Agent 循环与工具
-│   │   ├── loop.py         # stream_agent（NDJSON；工具失败可回退）
+│   ├── agent/              # Agent 循环、事件与工具
+│   │   ├── loop.py         # run()：默认 LegacyRunner；AGENT_RUNNER=graph 切 Graph
+│   │   ├── graph.py        # LangGraph：think → act → observe
+│   │   ├── events.py       # token / thought / action / observation / sources / error / done
+│   │   ├── sse.py          # SSE 帧编码
 │   │   └── tools.py        # 知识库工具 + 联网工具
 │   ├── routers/            # users / auth / chat / agent
+│   ├── core/               # 配置、限流、Redis、鉴权
 │   └── rag/
 │       ├── chain.py        # 检索与上下文格式化
 │       ├── rewrite.py      # Query 改写
@@ -186,7 +192,8 @@ lingnan-university-rag/
 │   └── evaluation_report.md
 ├── data/                   # 本地语料目录（完整 PDF 未纳入本仓库）
 ├── playground/             # 早期检索/切块等实验脚本（非主线，可不看）
-├── tests/
+├── tests/                  # SSE、工具 payload、Legacy / Graph runner
+├── docker/                 # Compose：MySQL + Redis + 后端 + 前端
 ├── image/                  # README 用架构图、Swagger / Streamlit 截图等
 ├── requirements.txt            # 后端 / Docker API 运行时
 ├── requirements-frontend.txt   # Streamlit 前端
@@ -205,7 +212,7 @@ lingnan-university-rag/
 
 ### 1. 环境
 
-需要 **Python ≥ 3.10**。
+需要 **Python ≥ 3.11**（Docker 镜像与徽章均为 3.11）。
 
 ```bash
 git clone https://github.com/wuziqing2003/lingnan-university-rag.git
@@ -223,12 +230,19 @@ copy .env.example .env
 
 Docker 后端镜像只装运行时：`pip install -r requirements.txt`；前端镜像：`pip install -r requirements-frontend.txt`。
 
-在 `.env` 中填写 `DEEPSEEK_API_KEY`、`SiliconFlow_API_KEY`、`TAVILY_API_KEY`、`DB_*`、`SECRET_KEY`、`REDIS_*` 等（**不要提交 `.env`**）。
+在 `.env` 中填写 `DEEPSEEK_API_KEY`、`SiliconFlow_API_KEY`、`TAVILY_API_KEY`、`DB_*`、`SECRET_KEY`、`REDIS_*`、演示限额 `DEMO_*` 等（**不要提交 `.env`**）。可选 `AGENT_RUNNER=graph` 启用 LangGraph，默认 `legacy`。
 
 将 PDF 放到 `data/pdfs/` 后执行入库（生成 `chroma_db/`，该目录默认不提交）：
 
 ```bash
 python scripts/ingest_pdfs.py
+```
+
+也可用 Compose 拉起 MySQL、Redis、后端与前端（仍需本机先入库，API 镜像默认不含 `chroma_db`）：
+
+```bash
+cd docker
+docker compose up --build
 ```
 
 ### 2. 启动后端
@@ -242,6 +256,14 @@ python -m app.main
 
 > 请用 `python -m app.main` 从项目根目录启动；直接 `python app/main.py` 可能出现 `No module named 'app'`。
 
+默认 Agent 为 `LegacyRunner`。改用 LangGraph：
+
+```bash
+# Windows PowerShell
+$env:AGENT_RUNNER="graph"
+python -m app.main
+```
+
 ### 3. 启动前端
 
 另开终端：
@@ -250,7 +272,7 @@ python -m app.main
 streamlit run main.py
 ```
 
-侧边栏显示「后端已连接」后即可提问。界面为「教务规章助手」：校内规定走知识库，公开资讯可点示例题体验联网；默认请求 `POST /agent/stream`。
+侧边栏显示「后端已连接」后即可提问。界面为「教务规章助手」：校内规定走知识库，公开资讯可点示例题体验联网；默认请求 `POST /agent/stream`。额度用尽时前端会展示后端返回的 429 说明。
 
 ### 4. 测试与评估（可选）
 
@@ -260,17 +282,20 @@ python evaluation/eval_with_ragas.py --mode rerank
 python evaluation/eval_refusal.py
 ```
 
+当前测试覆盖 SSE 编解码、工具 payload 解析、以及 Legacy / Graph runner 的事件顺序与工具失败回退。
+
 ### 流式问答示例
 
-Agent（与前端一致）：
+Agent（与前端一致，SSE）：
 
 ```bash
 curl -N -X POST http://127.0.0.1:8000/agent/stream ^
   -H "Content-Type: application/json" ^
+  -H "Accept: text/event-stream" ^
   -d "{\"question\":\"研究生国家奖学金和国家助学金有什么区别？\"}"
 ```
 
-纯 RAG 兼容接口：
+纯 RAG 兼容接口（纯文本流 + 末尾来源 JSON）：
 
 ```bash
 curl -N -X POST http://127.0.0.1:8000/chat/stream ^
@@ -285,6 +310,7 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 - 评估集现为 Ragas 50 题 / 拒答 30 题，结论仍不宜外推到全部规章问答；Agent + 联网路径尚未单独做同规模评测  
 - 仍有题目两边 Context Recall 为 0：所需段落可能未进入 Hybrid Top10，Rerank 帮不上，需要回头查切块、分词或初筛  
 - 拒答回归里仍有 3 题误拒：有相关制度但缺精确字段（电话 / 名额 / 宿舍房型）时，模型会整句拒答，偏「过拒」  
+- Agent 默认仍是 `LegacyRunner`，LangGraph 需 `AGENT_RUNNER=graph`；两条路径并存，演示与文档需自行对齐  
 - Rerank / Tavily 依赖外部 API，会增加延迟与对密钥/网络的依赖  
 - 模型无内置实时时钟：像「今天几号」这类问题需注入当前日期或增加时间工具，不能单靠知识库/网页碰运气  
 
@@ -295,13 +321,25 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream ^
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/health` | 健康检查 |
-| POST | `/agent/stream` | **主接口**：Agent 工具循环流式问答（NDJSON：token / tool_call / sources / done） |
-| POST | `/chat/stream` | 兼容：纯 RAG 流式问答（答案后可附带来源） |
+| POST | `/agent/stream` | **主接口**：Agent 工具循环，SSE（`text/event-stream`） |
+| POST | `/chat/stream` | 兼容：纯 RAG 流式问答（`text/plain`，答案后附带来源 JSON） |
 | POST | `/user` | 用户注册 |
 | GET | `/user/{id}` | 按 id 查询（Redis 缓存） |
 | GET | `/user` | 用户分页列表 |
 | POST | `/login` | 登录，返回 JWT |
 | GET | `/profile` | 当前用户信息（Bearer Token） |
+
+`/agent/stream` 事件类型：
+
+| event | 含义 |
+|-------|------|
+| `thought` | 模型在调用工具前的思考（LangGraph 路径） |
+| `action` | 即将调用的工具名与参数 |
+| `observation` | 工具返回摘要 |
+| `token` | 最终回答的流式增量 |
+| `sources` | 知识库页码或网页链接 |
+| `error` | 失败信息（工具失败时不假装已检索到规章） |
+| `done` | 本轮结束 |
 
 ## 附录：用户接口请求生命周期
 
