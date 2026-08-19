@@ -12,7 +12,7 @@ class StreamResult:
     error : str | None = None
     steps : list | None = field(default_factory=list)
 
-def _parse_sse_frame(frame:str):
+def decode_sse(frame:str):
     event_name = None
     data_lines = []
     for raw in frame.split("\n"):
@@ -71,7 +71,7 @@ def stream_from_backend(question: str):
                         if not frame:
                             continue
                         try:
-                            et,data = _parse_sse_frame(frame)
+                            et,data = decode_sse(frame)
                         except json.JSONDecodeError:
                             continue
                         

@@ -11,6 +11,17 @@ from langchain_openai import ChatOpenAI
 from app.agent.tools import TOOL_MAP, TOOLS
 from app.core.config import DEEPSEEK_API_KEY
 from app.agent.tools import _pack
+from app.agent.events import (
+    ActionEvent,
+    AgentEvent,
+    DoneEvent,
+    ErrorEvent,
+    ObservationEvent,
+    SourcesEvent,
+    TokenEvent,
+)
+import os
+
 
 SYSTEM_PROMPT = """你是岭南师范学院规章与信息公开问答助手。
 你只能依据工具返回的资料回答，不得使用训练知识或常识补全校内规定。
@@ -50,10 +61,6 @@ model = ChatOpenAI(
     streaming=True,
 )
 llm_with_tools = model.bind_tools(TOOLS)
-def _sse(event: str,data:dict | None = None) -> str:
-    payload = json.dumps(data or {},ensure_ascii=False)
-    return f"event:{event}\ndata:{payload}\n\n"
-    
 
 def _parse_tool_payload(raw:str):
     try:
@@ -82,80 +89,88 @@ def _chunk_text(content):
     return str(content)
 
 
-async def stream_agent(user_text: str, max_rounds: int = 5)-> AsyncIterator[str]:
-    messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=user_text),
-    ]
- 
-
-    try:
-        for round_i in range(max_rounds):
-            assembled = None
-            saw_tools = False
-            async for chunk in llm_with_tools.astream(messages):
-                assembled = chunk if assembled is None else assembled + chunk
-                if getattr(chunk, "tool_call_chunks", None):
-                    saw_tools = True
-                text = _chunk_text(chunk.content)
-                if text and not saw_tools:
-                    yield _sse("token", {"delta": text})
-         
-
-            if assembled is None:
-                yield _sse("error", {"message": "模型无输出"})
-                yield _sse("done")
-                return
-        
-            ai_msg = AIMessage(
-                content=assembled.content,
-                tool_calls=getattr(assembled, "tool_calls", []) or [],
-            )
-            messages.append(ai_msg)
-
-            if ai_msg.tool_calls:
-                for tc in ai_msg.tool_calls:
-                    yield _sse(
-                        "action",
-                        {
-                            "round": round_i,
-                            "name": tc["name"],
-                            "args": tc["args"],
-                            "id": tc["id"],
-                        }
-                    )
-                    tool_fn = TOOL_MAP[tc["name"]]
-                    try:
-                        raw = await tool_fn.ainvoke(tc["args"])
-                    except Exception as e:
-                        raw = _pack(
-                            f"【工具暂时不可用】{tc['name']} 调用失败：{e}。"
-                            "请基于已有信息作答或说明无法完成检索，不要假装已经搜到了内容。"
+class LegacyRunner:
+    async def run(
+        self,
+        question: str,
+        thread_id: str | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=question),
+        ]
+        max_rounds = 5
+        try:
+            for round_i in range(max_rounds):
+                assembled = None
+                saw_tools = False
+                async for chunk in llm_with_tools.astream(messages):
+                    assembled = chunk if assembled is None else assembled + chunk
+                    if getattr(chunk, "tool_call_chunks", None):
+                        saw_tools = True
+                    text = _chunk_text(chunk.content)
+                    if text and not saw_tools:
+                        yield TokenEvent(delta=text)
+                if assembled is None:
+                    yield ErrorEvent(message="模型无输出")
+                    yield DoneEvent()
+                    return
+                ai_msg = AIMessage(
+                    content=assembled.content,
+                    tool_calls=getattr(assembled, "tool_calls", []) or [],
+                )
+                messages.append(ai_msg)
+                if ai_msg.tool_calls:
+                    for tc in ai_msg.tool_calls:
+                        yield ActionEvent(
+                            round=round_i,
+                            name=tc["name"],
+                            args=tc["args"],
+                            id=tc["id"],
                         )
-                        
-                    content, sources = _parse_tool_payload(raw)
-                    messages.append(
-                        ToolMessage(content=content, tool_call_id=tc["id"])
-                    )
-                    preview = content if len(content) <= 500 else content[:500] + "..."
-                    yield _sse(
-                        "observation",
-                        {
-                            "round": round_i,
-                            "name": tc["name"],
-                            "id": tc["id"],
-                            "content": preview,
-                        }
-                    )
-                    if sources:
-                        yield _sse("sources",{"items": sources})
-                continue
+                        tool_fn = TOOL_MAP[tc["name"]]
+                        try:
+                            raw = await tool_fn.ainvoke(tc["args"])
+                        except Exception as e:
+                            raw = _pack(
+                                f"【工具暂时不可用】{tc['name']} 调用失败：{e}。"
+                                "请基于已有信息作答或说明无法完成检索，不要假装已经搜到了内容。"
+                            )
+                        content, sources = _parse_tool_payload(raw)
+                        messages.append(
+                            ToolMessage(content=content, tool_call_id=tc["id"])
+                        )
+                        preview = content if len(content) <= 500 else content[:500] + "..."
+                        yield ObservationEvent(
+                            round=round_i,
+                            name=tc["name"],
+                            id=tc["id"],
+                            content=preview,
+                        )
+                        if sources:
+                            yield SourcesEvent(items=sources)
+                    continue
+                yield DoneEvent()
+                return
+            yield ErrorEvent(message="执行轮次超限")
+            yield DoneEvent()
+        except Exception as e:
+            yield ErrorEvent(message=str(e))
+            yield DoneEvent()
 
-            yield _sse("done")
-            return
-        yield _sse("error", {"message": "执行轮次超限"})
-        yield _sse("done")
-    except Exception as e:
-        yield _sse("error", {"message": str(e)})
-        yield _sse("done")
 
+
+
+async def run(
+    question: str,
+    thread_id: str | None = None,
+) -> AsyncIterator[AgentEvent]:
+    if os.getenv("AGENT_RUNNER", "legacy") == "graph":
+        from app.agent.graph import GraphRunner
+
+        runner = GraphRunner()
+    else:
+        runner = LegacyRunner()
+    async for event in runner.run(question, thread_id):
+
+        yield event
