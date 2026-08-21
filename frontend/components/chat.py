@@ -1,5 +1,5 @@
 import logging
-
+import uuid
 import httpx
 import streamlit as st
 from frontend.config import DEMO_SESSION_LIMIT
@@ -26,6 +26,8 @@ def _format_steps(steps: list) -> str:
             lines.append(f"**调用工具** `{name}`  \n参数：{query}")
         elif s.get("kind") == "observation":
             lines.append(f"**工具返回结果**  \n{s.get('content') or ''}")
+        elif s.get("kind") == "thought":
+            lines.append(f"**思考**  \n{s.get('delta') or ''}")
     return "\n\n".join(lines)
 
 def _render_assistant_body(content: str, steps: list | None, sources: list | None) -> None:
@@ -53,6 +55,8 @@ def render_chat() -> None:
         st.session_state.messages = []
     if "demo_used" not in st.session_state:
         st.session_state.demo_used = 0
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = str(uuid.uuid4())
     remain = max(DEMO_SESSION_LIMIT - st.session_state.demo_used, 0)
     st.caption(f"演示额度：本会话剩余 {remain}/{DEMO_SESSION_LIMIT} 次")
 
@@ -90,7 +94,7 @@ def render_chat() -> None:
             try:
                 thought_box = st.empty()   # 先创建 → 在上面
                 answer_box = st.empty()
-                gen,result = stream_from_backend(prompt)
+                gen,result = stream_from_backend(prompt, st.session_state.thread_id)
                 full_response = ""
                 cleared_for_tools = False
                 for delta in gen:

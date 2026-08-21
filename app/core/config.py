@@ -1,6 +1,6 @@
 import logging
 import os
-
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -57,4 +57,9 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 if not TAVILY_API_KEY:
     logging.error("Config load failed! TAVILY_API_KEY is missing")
     raise ValueError("TAVILY_API_KEY 缺失")
+CHECKPOINT_SQLITE_PATH = os.getenv(
+    "CHECKPOINT_SQLITE_PATH",
+    str(Path(__file__).resolve().parents[2] / "data" / "checkpoints.sqlite"),
+)
+
 

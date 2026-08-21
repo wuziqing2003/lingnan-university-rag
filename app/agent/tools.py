@@ -27,7 +27,7 @@ def web_to_sources(results:list[dict])->list[dict]:
         for r in (results or [])
     ]
 
-def _format_web_sources(results:list[dict])->list[dict]:
+def _format_web_sources(results:list[dict])->str:
     parts = []
     for i,r in enumerate(results,start=1):
         title = r.get("title") or "未知来源"

@@ -165,7 +165,7 @@ async def run(
     question: str,
     thread_id: str | None = None,
 ) -> AsyncIterator[AgentEvent]:
-    if os.getenv("AGENT_RUNNER", "legacy") == "graph":
+    if os.getenv("AGENT_RUNNER", "graph") == "graph":
         from app.agent.graph import GraphRunner
 
         runner = GraphRunner()

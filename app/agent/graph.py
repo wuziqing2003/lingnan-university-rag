@@ -8,6 +8,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
     ToolMessage,
+    RemoveMessage,
 )
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
@@ -27,6 +28,7 @@ from app.agent.events import (
 from app.agent.loop import SYSTEM_PROMPT, _chunk_text, _parse_tool_payload
 from app.agent.tools import TOOL_MAP, TOOLS, _pack
 from app.core.config import DEEPSEEK_API_KEY
+from uuid import UUID, uuid4
 
 def _chunk_for_stream(text: str, size: int = 8):
     for i in range(0, len(text), size):
@@ -34,6 +36,8 @@ def _chunk_for_stream(text: str, size: int = 8):
 
 logger = logging.getLogger(__name__)
 MAX_ROUNDS = 5
+SUMMARIZE_AFTER_TURNS = 5
+KEEP_LAST_MESSAGES = 4
 model = ChatOpenAI(
     model="deepseek-v4-pro",
     base_url="https://api.deepseek.com",
@@ -51,6 +55,34 @@ class AgentState(TypedDict):
     sources : list
     error : str | None
     round : int
+    turn : int
+    summary : str
+
+def _messages_for_model(state:AgentState) -> list[AnyMessage]:
+    summary = (state.get("summary") or "").strip()
+    sys = SYSTEM_PROMPT
+    if summary:
+        sys = SYSTEM_PROMPT + "\n\n【此前对话摘要】\n" + summary
+    rest = [m for m in state["messages"] if not isinstance(m,SystemMessage)]
+    return [SystemMessage(content=sys,id="system"),*rest]
+
+async def _summarize_messages(messages:list[AnyMessage],prev_summary:str) -> str:
+    parts : list[str] = []
+    if prev_summary:
+        parts.append(f"已有摘要：{prev_summary}")
+    for m in messages:
+        text = _chunk_text(getattr(m,"content",""))
+        if not text:
+            continue
+        parts.append(f"{m.__class__.__name__}:{text[:800]}")
+    prompt = (
+        "请将以下对话压缩成简短中文摘要，保留用户问过的主题和已得到的关键结论。"
+        "不要编造校内条文。\n\n"
+        + "\n".join(parts[-40:])
+    )
+    resp = await model.ainvoke([HumanMessage(content=prompt)])
+    return _chunk_text(resp.content) or prev_summary or ""
+
 
 async def think(state:AgentState,writer : StreamWriter) -> dict:
     if state["round"] >= MAX_ROUNDS:
@@ -58,7 +90,7 @@ async def think(state:AgentState,writer : StreamWriter) -> dict:
 
     assembled = None
 
-    async for chunk in llm_with_tools.astream(state["messages"]):
+    async for chunk in llm_with_tools.astream(_messages_for_model(state)):
         assembled = chunk if assembled is None else assembled + chunk
    
     if assembled is None:
@@ -88,6 +120,11 @@ async def answer(state:AgentState,writer:StreamWriter) -> dict:
         writer(TokenEvent(delta=piece))
     writer(DoneEvent())
     return {}
+
+def route_start(state:AgentState) -> Literal["summarize", "think"]:
+    if (state.get("turn") or 0) > SUMMARIZE_AFTER_TURNS:
+        return "summarize"
+    return "think"
     
 
 def route_after_think(state:AgentState) -> Literal["act","answer","fail"]:
@@ -146,21 +183,37 @@ async def observe(state:AgentState,writer:StreamWriter) -> dict:
             "pending_actions":[],
         }
 
+async def summarize(state: AgentState, writer: StreamWriter) -> dict:
+    messages = list(state.get("messages") or [])
+    prev = state.get("summary") or ""
+    new_summary = await _summarize_messages(messages, prev)
+    removable = [m for m in messages if not isinstance(m, SystemMessage) and getattr(m, "id", None)]
+    stale = removable[:-KEEP_LAST_MESSAGES] if len(removable) > KEEP_LAST_MESSAGES else []
+    deletions = [RemoveMessage(id=m.id) for m in stale]
+    return {"summary": new_summary, "messages": deletions}
+
 async def fail(state: AgentState, writer: StreamWriter) -> dict:
     writer(ErrorEvent(message=state.get("error") or "未知错误"))
     writer(DoneEvent())
     return {}
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     builder = StateGraph(AgentState)
+    builder.add_node("summarize", summarize)
     builder.add_node("think", think)
     builder.add_node("act", act)
     builder.add_node("observe", observe)
     builder.add_node("answer", answer)
     builder.add_node("fail", fail)
 
-    builder.add_edge(START, "think")
+  
+    builder.add_conditional_edges(
+        START,
+        route_start,
+        {"summarize": "summarize", "think": "think"},
+    )
+    builder.add_edge("summarize", "think")
     builder.add_conditional_edges(
         "think",
         route_after_think,
@@ -170,30 +223,83 @@ def build_graph():
     builder.add_edge("observe", "think")
     builder.add_edge("answer", END)
     builder.add_edge("fail", END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 graph = build_graph()
 
+def _empty_values(values: dict | None) -> bool:
+    if not values:
+        return True
+    return not values.get("messages")
 class GraphRunner:
+    def __init__(self, compiled=None):
+        self._compiled = compiled
+    def _graph(self):
+        return self._compiled if self._compiled is not None else graph
     async def run(
         self,
         question: str,
-        thread_id: str | None = None,
+        thread_id: str | UUID | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        initial: AgentState = {
-            "messages": [
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=question),
-            ],
-            "thought": "",
-            "pending_actions": [],
-            "pending_observations": [],
-            "sources": [],
-            "error": None,
-            "round": 0,
-        }
-        async for event in graph.astream(initial, stream_mode="custom"):
+        compiled = self._graph()
+        checkpointer = getattr(compiled, "checkpointer", None)
+        if not checkpointer:
+            initial: AgentState = {
+                "messages": [
+                    SystemMessage(content=SYSTEM_PROMPT, id="system"),
+                    HumanMessage(content=question, id=str(uuid4())),
+                ],
+                "thought": "",
+                "pending_actions": [],
+                "pending_observations": [],
+                "sources": [],
+                "error": None,
+                "round": 0,
+                "turn": 1,
+                "summary": "",
+            }
+            async for event in compiled.astream(initial, stream_mode="custom"):
+                yield event
+            return
+        if thread_id is None:
+            yield ErrorEvent(message="缺少 thread_id")
+            yield DoneEvent()
+            return
+        config = {"configurable": {"thread_id": str(thread_id)}}
+        snapshot = await compiled.aget_state(config)
+        values = snapshot.values or {}
+        if _empty_values(values):
+            payload: dict[str, Any] = {
+                "messages": [
+                    SystemMessage(content=SYSTEM_PROMPT, id="system"),
+                    HumanMessage(content=question, id=str(uuid4())),
+                ],
+                "thought": "",
+                "pending_actions": [],
+                "pending_observations": [],
+                "sources": [],
+                "error": None,
+                "round": 0,
+                "turn": 1,
+                "summary": "",
+            }
+        else:
+            payload = {
+                "messages": [HumanMessage(content=question, id=str(uuid4()))],
+                "thought": "",
+                "pending_actions": [],
+                "pending_observations": [],
+                "sources": [],
+                "error": None,
+                "round": 0,  # 这一问的 ReAct 步数从 0 再数
+                "turn": int(values.get("turn") or 0) + 1,
+            }
+        async for event in compiled.astream(
+            payload,
+            config=config,
+            stream_mode="custom",
+        ):
             yield event
                 
 

@@ -1,15 +1,32 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
 from sqlalchemy.exc import OperationalError
 import uvicorn
-from fastapi import FastAPI,Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.database import Base, engine
-from app.models.user import User  # noqa: F401  # 注册模型到 Base.metadata
-from app.routers import auth, users,chat
 from fastapi.responses import JSONResponse
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from app.core.database import Base, engine
 from app.core.exceptions import CustomException
+from app.core.config import CHECKPOINT_SQLITE_PATH
+from app.models.user import User  # noqa: F401
 from app.routers import auth, users, chat, agent
+from app.agent import graph as graph_mod
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="lingnan-api")
+
+
+
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Path(CHECKPOINT_SQLITE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    async with AsyncSqliteSaver.from_conn_string(CHECKPOINT_SQLITE_PATH) as saver:
+        await saver.setup()
+        graph_mod.graph = graph_mod.build_graph(checkpointer=saver)
+        yield
+
+app = FastAPI(title="lingnan-api",lifespan=lifespan)
 ###给应用加一个中间件，任何请求进出都会经过它
 app.add_middleware(
     CORSMiddleware,##专门处理跨域响应头

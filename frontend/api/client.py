@@ -39,7 +39,7 @@ def check_backend() -> bool:
         return False
 
 
-def stream_from_backend(question: str):
+def stream_from_backend(question: str, thread_id: str):
 
     result = StreamResult()
     def gen():
@@ -48,7 +48,7 @@ def stream_from_backend(question: str):
             with client.stream(
                 "POST",
                 CHAT_URL,
-                json={"question": question},
+                json={"question": question,"thread_id": thread_id},
                 headers={"Accept": "text/event-stream"},
             ) as response:
                 if response.status_code == 429:
@@ -79,6 +79,13 @@ def stream_from_backend(question: str):
                             delta = data.get("delta") or ""
                             if delta:
                                 yield delta
+                        elif et == "thought":
+                            if data.get("skipped"):
+                                yield ""
+                                continue
+                            delta = data.get("delta") or ""
+                            if delta:
+                                result.steps.append({"kind":"thought","delta":delta})
                         elif et == "action":
                             result.steps.append(
                                 {
@@ -99,8 +106,16 @@ def stream_from_backend(question: str):
                             yield ""
                         elif et == "sources":
                             items = data.get("items") or []
-                            if items:
-                                result.sources = items
+                            seen = {
+                                (s.get("url") or "",s.get("source"),s.get("page")) for s in result.sources
+                            }
+                            for it in items:
+                                key = (it.get("url") or "",it.get("source"),it.get("page"))
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                result.sources.append(it)
+                            
                         elif et == "error":
                             result.error = data.get("message") or "未知错误"
                         elif et == "done":

@@ -12,7 +12,7 @@ async def agent_stream(body: AgentRequest,request:Request):
     ip = get_client_ip(request)
     check_demo_rate_limit(ip)
     async def sse_stream():
-        async for event in run(body.question, thread_id=None):
+        async for event in run(body.question,thread_id=str(body.thread_id)):
             yield encode_sse(event)
 
     return StreamingResponse(

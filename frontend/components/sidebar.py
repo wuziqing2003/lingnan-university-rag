@@ -37,6 +37,7 @@ def render_sidebar() -> None:
         if st.button("清空对话", use_container_width=True):
             st.session_state.messages = []
             st.session_state.pop("pending_question", None)
+            st.session_state.thread_id = str(__import__("uuid").uuid4())
             st.rerun()
 
         st.caption(
